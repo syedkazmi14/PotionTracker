@@ -119,6 +119,7 @@ export type CourierAssignment = {
   travel_time_minutes: number
   total_time_minutes: number
   volume_collected: number
+  distance_km?: number
 }
 
 export type DailySchedule = {
@@ -126,6 +127,7 @@ export type DailySchedule = {
   couriers_needed: number
   assignments: CourierAssignment[]
   unassigned_pickups?: number
+  total_distance_km?: number
 }
 
 // Network Types

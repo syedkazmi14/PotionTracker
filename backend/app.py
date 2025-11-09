@@ -433,6 +433,7 @@ def test_forecast():
     """Test route to verify forecast module is loaded."""
     return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})
 
+<<<<<<< HEAD
 # ===================================================================
 # SCRIPT EXECUTION
 # ===================================================================

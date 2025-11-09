@@ -1,10 +1,28 @@
 """
 Route optimization module using Dijkstra's algorithm.
-Optimizes courier routes to minimize travel time.
+Optimizes courier routes to minimize travel time and distance.
 """
 from typing import Dict, List, Tuple, Optional
 import heapq
 import requests
+import math
+
+
+def haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """
+    Calculate distance between two points using Haversine formula.
+    Returns distance in kilometers.
+    """
+    R = 6371  # Earth's radius in km
+    d_lat = math.radians(lat2 - lat1)
+    d_lon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(d_lat / 2) * math.sin(d_lat / 2) +
+        math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) *
+        math.sin(d_lon / 2) * math.sin(d_lon / 2)
+    )
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return R * c
 
 
 class Graph:
@@ -12,38 +30,55 @@ class Graph:
     
     def __init__(self):
         self.nodes = {}  # node_id -> {lat, lon, ...}
-        self.edges = {}  # (from, to) -> travel_time_minutes
+        self.edges = {}  # (from, to) -> {travel_time, distance}
     
     def add_node(self, node_id: str, **attributes):
         """Add a node to the graph."""
         self.nodes[node_id] = attributes
     
-    def add_edge(self, from_node: str, to_node: str, travel_time: float):
+    def add_edge(self, from_node: str, to_node: str, travel_time: float, distance: Optional[float] = None):
         """Add a directed edge to the graph."""
         if from_node not in self.edges:
             self.edges[from_node] = {}
-        self.edges[from_node][to_node] = travel_time
+        
+        # Calculate distance if not provided
+        if distance is None and from_node in self.nodes and to_node in self.nodes:
+            from_node_data = self.nodes[from_node]
+            to_node_data = self.nodes[to_node]
+            if 'latitude' in from_node_data and 'longitude' in from_node_data:
+                distance = haversine_distance(
+                    from_node_data['latitude'], from_node_data['longitude'],
+                    to_node_data['latitude'], to_node_data['longitude']
+                )
+        
+        self.edges[from_node][to_node] = {
+            'travel_time': travel_time,
+            'distance': distance or 0.0
+        }
     
-    def get_neighbors(self, node_id: str) -> List[Tuple[str, float]]:
-        """Get neighbors of a node with their edge weights."""
+    def get_neighbors(self, node_id: str) -> List[Tuple[str, float, float]]:
+        """Get neighbors of a node with their edge weights (travel_time, distance)."""
         if node_id not in self.edges:
             return []
-        return [(neighbor, weight) for neighbor, weight in self.edges[node_id].items()]
+        return [
+            (neighbor, edge_data['travel_time'], edge_data['distance'])
+            for neighbor, edge_data in self.edges[node_id].items()
+        ]
     
-    def dijkstra(self, start: str, end: str) -> Tuple[List[str], float]:
+    def dijkstra(self, start: str, end: str) -> Tuple[List[str], float, float]:
         """
         Find shortest path from start to end using Dijkstra's algorithm.
-        Returns (path, total_time).
+        Returns (path, total_time, total_distance).
         """
         if start not in self.nodes or end not in self.nodes:
-            return [], float('inf')
+            return [], float('inf'), float('inf')
         
-        # Priority queue: (total_time, current_node, path)
-        pq = [(0, start, [start])]
+        # Priority queue: (total_time, current_node, path, total_distance)
+        pq = [(0, start, [start], 0.0)]
         visited = set()
         
         while pq:
-            total_time, current, path = heapq.heappop(pq)
+            total_time, current, path, total_distance = heapq.heappop(pq)
             
             if current in visited:
                 continue
@@ -51,15 +86,16 @@ class Graph:
             visited.add(current)
             
             if current == end:
-                return path, total_time
+                return path, total_time, total_distance
             
-            for neighbor, edge_time in self.get_neighbors(current):
+            for neighbor, edge_time, edge_distance in self.get_neighbors(current):
                 if neighbor not in visited:
                     new_time = total_time + edge_time
+                    new_distance = total_distance + edge_distance
                     new_path = path + [neighbor]
-                    heapq.heappush(pq, (new_time, neighbor, new_path))
+                    heapq.heappush(pq, (new_time, neighbor, new_path, new_distance))
         
-        return [], float('inf')  # No path found
+        return [], float('inf'), float('inf')  # No path found
 
 
 def fetch_network_data() -> Dict:
@@ -98,10 +134,11 @@ def build_graph(network_data: Dict, cauldrons: List[Dict], market: Dict) -> Grap
         from_node = edge['from']
         to_node = edge['to']
         travel_time = edge['travel_time_minutes']
+        distance = edge.get('distance_km')  # Optional distance from API
         
-        graph.add_edge(from_node, to_node, travel_time)
+        graph.add_edge(from_node, to_node, travel_time, distance)
         # Add reverse edge (assuming bidirectional)
-        graph.add_edge(to_node, from_node, travel_time)
+        graph.add_edge(to_node, from_node, travel_time, distance)
     
     return graph
 
@@ -111,20 +148,22 @@ def optimize_route(
     cauldrons_to_visit: List[str],
     start_node: str = 'market',
     end_node: str = 'market'
-) -> Tuple[List[str], float]:
+) -> Tuple[List[str], float, float]:
     """
     Optimize route to visit multiple cauldrons.
     Uses nearest neighbor heuristic with Dijkstra for path segments.
+    Returns (route, total_time, total_distance).
     """
     if not cauldrons_to_visit:
-        path, time = graph.dijkstra(start_node, end_node)
-        return path, time
+        path, time, distance = graph.dijkstra(start_node, end_node)
+        return path, time, distance
     
     # Nearest neighbor approach
     route = [start_node]
     unvisited = set(cauldrons_to_visit)
     current = start_node
     total_time = 0.0
+    total_distance = 0.0
     
     while unvisited:
         # Find nearest unvisited cauldron
@@ -133,7 +172,7 @@ def optimize_route(
         nearest_path = []
         
         for cauldron in unvisited:
-            path, time = graph.dijkstra(current, cauldron)
+            path, time, distance = graph.dijkstra(current, cauldron)
             if time < min_time:
                 min_time = time
                 nearest = cauldron
@@ -145,16 +184,20 @@ def optimize_route(
         # Add path to route (skip first node as it's already in route)
         route.extend(nearest_path[1:])
         total_time += min_time
+        # Get distance for this segment from dijkstra result
+        _, _, segment_distance = graph.dijkstra(current, nearest)
+        total_distance += segment_distance
         unvisited.remove(nearest)
         current = nearest
     
     # Return to end node
     if current != end_node:
-        path, time = graph.dijkstra(current, end_node)
+        path, time, distance = graph.dijkstra(current, end_node)
         route.extend(path[1:])
         total_time += time
+        total_distance += distance
     
-    return route, total_time
+    return route, total_time, total_distance
 
 
 def optimize_courier_route(
@@ -162,10 +205,10 @@ def optimize_courier_route(
     cauldrons_to_visit: List[str],
     courier_capacity: float,
     cauldron_volumes: Dict[str, float]
-) -> Tuple[List[str], float, float]:
+) -> Tuple[List[str], float, float, float]:
     """
     Optimize route for a single courier considering capacity.
-    Returns (route, total_time, total_collected_volume).
+    Returns (route, total_time, total_distance, total_collected_volume).
     """
     # Filter cauldrons that can be collected (based on capacity)
     collectable = []
@@ -181,11 +224,11 @@ def optimize_courier_route(
     
     if not collectable:
         # Return to market empty
-        path, time = graph.dijkstra('market', 'market')
-        return path, time, 0.0
+        path, time, distance = graph.dijkstra('market', 'market')
+        return path, time, distance, 0.0
     
     # Optimize route for collectable cauldrons
-    route, time = optimize_route(graph, collectable, 'market', 'market')
+    route, time, distance = optimize_route(graph, collectable, 'market', 'market')
     
-    return route, time, collected_volume
+    return route, time, distance, collected_volume
 

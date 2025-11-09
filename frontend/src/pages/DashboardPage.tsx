@@ -1,29 +1,39 @@
 import { useCauldrons } from '@/hooks/useCauldrons'
 import { useDiscrepancyData } from '@/hooks/useDiscrepancyData'
+import { useTickets } from '@/hooks/useTickets'
 import { Card as KPICard } from '@/components/Card'
-import { Card, CardContent } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ChartContainer } from '@/components/ChartContainer'
 import { XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, Legend, LineChart, Line, Cell, ScatterChart, Scatter } from 'recharts'
-import { Activity, AlertTriangle, FlaskConical } from 'lucide-react'
+import { Activity, AlertTriangle, FlaskConical, Ticket, Filter, X } from 'lucide-react'
 import { DateTime } from 'luxon'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { useMemo, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { TrendLineDataPoint } from '@/types'
+import { TrendLineDataPoint, Courier } from '@/types'
+import { Badge } from '@/components/ui/badge'
+import { useLiveData } from '@/hooks/useLiveData'
+import { Select } from '@/components/ui/select'
 
 type TimeRange = 'past24h' | 'today' | 'yesterday' | 'custom'
 
 export function DashboardPage() {
   const { data: cauldrons = [], isLoading } = useCauldrons()
+  const { data: liveData, isLoading: liveDataLoading } = useLiveData()
   const { data: discrepancyData = {}, isLoading: discrepancyLoading } = useDiscrepancyData()
   const [timeRange, setTimeRange] = useState<TimeRange>('past24h')
   const [startDate, setStartDate] = useState<DateTime>(DateTime.now().minus({ days: 7 }))
   const [endDate, setEndDate] = useState<DateTime>(DateTime.now())
   const [threshold, setThreshold] = useState<number>(0)
 
-  // Calculate KPIs
-  const cauldronsOnline = cauldrons.filter(c => c.status !== 'offline').length
+  // Calculate KPIs using real data from liveData
+  const cauldronsOnline = useMemo(() => {
+    if (liveDataLoading || !liveData) {
+      return 0
+    }
+    return liveData.cauldrons.filter(c => c.status !== 'offline').length
+  }, [liveData, liveDataLoading])
   
   // Calculate Active Anomalies Today based on discrepancy threshold
   const totalAnomalies = useMemo(() => {
@@ -48,8 +58,13 @@ export function DashboardPage() {
     return cauldronsWithAnomalies.size
   }, [discrepancyData, discrepancyLoading, threshold])
   
-  // Calculate total current liters from all cauldrons
-  const totalPotions = cauldrons.reduce((sum, c) => sum + (c.potions || 0), 0)
+  // Calculate total current liters from all cauldrons using real data
+  const totalPotions = useMemo(() => {
+    if (liveDataLoading || !liveData) {
+      return 0
+    }
+    return liveData.cauldrons.reduce((sum, c) => sum + (c.currentLevel || 0), 0)
+  }, [liveData, liveDataLoading])
 
   // Get first 12 cauldrons
   const cauldronsToTrack = cauldrons.slice(0, 12)
@@ -786,6 +801,261 @@ export function DashboardPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Tickets Section */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Ticket className="h-5 w-5" />
+              Recent Transport Tickets
+            </CardTitle>
+            <TicketsMetadata />
+          </div>
+        </CardHeader>
+        <CardContent>
+          <TicketsList />
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
+
+function TicketsMetadata() {
+  const { data: metadata } = useQuery({
+    queryKey: ['tickets-metadata'],
+    queryFn: () => api.getTicketsMetadata(),
+  })
+
+  if (!metadata) return null
+
+  return (
+    <div className="flex items-center gap-4 text-sm">
+      <div className="flex items-center gap-1">
+        <span className="text-muted-foreground">Total:</span>
+        <span className="font-medium">{metadata.metadata.total_tickets}</span>
+      </div>
+      {metadata.metadata.suspicious_tickets > 0 && (
+        <Badge variant="destructive" className="text-xs">
+          {metadata.metadata.suspicious_tickets} Suspicious
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+type SortOption = 'date-desc' | 'date-asc' | 'amount-desc' | 'amount-asc' | 'cauldron' | 'courier'
+
+function TicketsList() {
+  const { data: tickets = [], isLoading } = useTickets()
+  const { data: liveData } = useLiveData()
+  const { data: metadata } = useQuery({
+    queryKey: ['tickets-metadata'],
+    queryFn: () => api.getTicketsMetadata(),
+  })
+  const { data: couriers = [], isLoading: couriersLoading } = useQuery<Courier[]>({
+    queryKey: ['couriers'],
+    queryFn: () => api.getCouriers(),
+  })
+  const cauldrons = liveData?.cauldrons || []
+
+  // Filter and sort state
+  const [selectedCourier, setSelectedCourier] = useState<string>('all')
+  const [selectedCauldron, setSelectedCauldron] = useState<string>('all')
+  const [sortOption, setSortOption] = useState<SortOption>('date-desc')
+
+  // Get suspicious ticket IDs from metadata if available
+  const suspiciousTicketIds = useMemo(() => {
+    if (!metadata || metadata.metadata.suspicious_tickets === 0) return new Set<string>()
+    // We don't have the exact list, so we'll use amount-based detection
+    return new Set<string>()
+  }, [metadata])
+
+  // Get unique courier IDs from tickets
+  const uniqueCourierIds = useMemo(() => {
+    const courierSet = new Set<string>()
+    tickets.forEach(ticket => courierSet.add(ticket.courier_id))
+    return Array.from(courierSet).sort()
+  }, [tickets])
+
+  // Filter and sort tickets
+  const filteredAndSortedTickets = useMemo(() => {
+    let filtered = [...tickets]
+
+    // Filter by courier
+    if (selectedCourier !== 'all') {
+      filtered = filtered.filter(ticket => ticket.courier_id === selectedCourier)
+    }
+
+    // Filter by cauldron
+    if (selectedCauldron !== 'all') {
+      filtered = filtered.filter(ticket => ticket.cauldron_id === selectedCauldron)
+    }
+
+    // Sort tickets
+    filtered.sort((a, b) => {
+      switch (sortOption) {
+        case 'date-desc':
+          return DateTime.fromISO(b.date).toMillis() - DateTime.fromISO(a.date).toMillis()
+        case 'date-asc':
+          return DateTime.fromISO(a.date).toMillis() - DateTime.fromISO(b.date).toMillis()
+        case 'amount-desc':
+          return b.amount_collected - a.amount_collected
+        case 'amount-asc':
+          return a.amount_collected - b.amount_collected
+        case 'cauldron':
+          const cauldronA = cauldrons.find(c => c.id === a.cauldron_id)?.name || a.cauldron_id
+          const cauldronB = cauldrons.find(c => c.id === b.cauldron_id)?.name || b.cauldron_id
+          return cauldronA.localeCompare(cauldronB)
+        case 'courier':
+          return a.courier_id.localeCompare(b.courier_id)
+        default:
+          return 0
+      }
+    })
+
+    return filtered
+  }, [tickets, selectedCourier, selectedCauldron, sortOption, cauldrons])
+
+  const hasActiveFilters = selectedCourier !== 'all' || selectedCauldron !== 'all'
+
+  if (isLoading || couriersLoading) {
+    return <div className="text-center py-8 text-muted-foreground">Loading tickets...</div>
+  }
+
+  if (tickets.length === 0) {
+    return <div className="text-center py-8 text-muted-foreground">No transport tickets found</div>
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Filter and Sort Controls */}
+      <div className="flex flex-wrap gap-3 items-end pb-4 border-b">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-muted-foreground" />
+          <span className="text-sm font-medium">Filters:</span>
+        </div>
+        
+        <div className="flex-1 min-w-[150px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Witch/Courier</label>
+          <Select
+            value={selectedCourier}
+            onChange={(e) => setSelectedCourier(e.target.value)}
+            className="w-full"
+          >
+            <option value="all">All Couriers</option>
+            {uniqueCourierIds.map(courierId => {
+              const courier = couriers.find(c => (c.courier_id || c.id) === courierId)
+              const displayName = courier?.name || courierId
+              return (
+                <option key={courierId} value={courierId}>
+                  {displayName}
+                </option>
+              )
+            })}
+          </Select>
+        </div>
+
+        <div className="flex-1 min-w-[150px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Cauldron</label>
+          <Select
+            value={selectedCauldron}
+            onChange={(e) => setSelectedCauldron(e.target.value)}
+            className="w-full"
+          >
+            <option value="all">All Cauldrons</option>
+            {cauldrons.map(cauldron => (
+              <option key={cauldron.id} value={cauldron.id}>
+                {cauldron.name || cauldron.id}
+              </option>
+            ))}
+          </Select>
+        </div>
+
+        <div className="flex-1 min-w-[150px]">
+          <label className="text-xs text-muted-foreground mb-1 block">Sort By</label>
+          <Select
+            value={sortOption}
+            onChange={(e) => setSortOption(e.target.value as SortOption)}
+            className="w-full"
+          >
+            <option value="date-desc">Date (Newest First)</option>
+            <option value="date-asc">Date (Oldest First)</option>
+            <option value="amount-desc">Amount (High to Low)</option>
+            <option value="amount-asc">Amount (Low to High)</option>
+            <option value="cauldron">Cauldron (A-Z)</option>
+            <option value="courier">Courier (A-Z)</option>
+          </Select>
+        </div>
+
+        {hasActiveFilters && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setSelectedCourier('all')
+              setSelectedCauldron('all')
+            }}
+            className="gap-2"
+          >
+            <X className="h-4 w-4" />
+            Clear Filters
+          </Button>
+        )}
+      </div>
+
+      {/* Results count */}
+      <div className="text-sm text-muted-foreground">
+        Showing {filteredAndSortedTickets.length} of {tickets.length} tickets
+      </div>
+
+      {/* Tickets List */}
+      {filteredAndSortedTickets.length === 0 ? (
+        <div className="text-center py-8 text-muted-foreground">
+          No tickets match the selected filters
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredAndSortedTickets.map((ticket) => {
+            const cauldron = cauldrons.find(c => c.id === ticket.cauldron_id)
+            const courier = couriers.find(c => (c.courier_id || c.id) === ticket.courier_id)
+            // Flag as suspicious if amount is unusually high (>50% of max volume) or if marked in metadata
+            const isSuspicious = ticket.amount_collected > (cauldron?.max_volume || 0) * 0.5 || 
+                                suspiciousTicketIds.has(ticket.ticket_id)
+            
+            return (
+              <div key={ticket.ticket_id} className="border rounded-lg p-4 hover:bg-muted/50 transition-colors">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <h4 className="font-semibold text-sm">Ticket #{ticket.ticket_id}</h4>
+                      {isSuspicious && (
+                        <Badge variant="destructive" className="text-xs">
+                          Suspicious
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      <span className="font-medium">Cauldron:</span> {cauldron?.name || ticket.cauldron_id}
+                    </p>
+                  </div>
+                  <Badge variant="outline" className="bg-blue-500/20 text-blue-700 border-blue-500/50">
+                    {ticket.amount_collected.toFixed(1)}L
+                  </Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground mt-2">
+                  <p>
+                    <span className="font-medium">Courier:</span> {courier?.name || ticket.courier_id}
+                  </p>
+                  <p>
+                    <span className="font-medium">Date:</span> {DateTime.fromISO(ticket.date).toLocaleString(DateTime.DATETIME_SHORT)}
+                  </p>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

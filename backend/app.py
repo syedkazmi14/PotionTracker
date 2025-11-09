@@ -358,6 +358,17 @@ def get_network_endpoint():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route("/api/tickets")
+@app.route("/api/proxy/tickets")
+def get_tickets_endpoint():
+    """Proxy endpoint to fetch tickets from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Tickets')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
 # Test route to verify new endpoints are loaded
 @app.route("/api/test-forecast")
 def test_forecast():

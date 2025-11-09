@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 import { cn } from '@/lib/utils'
+import { NetworkEdge } from '@/types'
 
 interface MapViewProps {
   className?: string
@@ -12,16 +13,37 @@ interface MapViewProps {
     status: string
     name: string
     level: number
+    fillPercent?: number
+    lastUpdated?: string | null
   }>
+  market?: {
+    id: string
+    name: string
+    latitude: number
+    longitude: number
+  } | null
+  networkEdges?: NetworkEdge[]
+  nodeCoordinates?: Map<string, { latitude: number; longitude: number }>
   onMarkerClick?: (id: string) => void
   route?: Array<{ latitude: number; longitude: number }>
+  routes?: Array<Array<{ latitude: number; longitude: number }>>
 }
 
-export function MapView({ className, markers = [], onMarkerClick, route }: MapViewProps) {
+export function MapView({ 
+  className, 
+  markers = [], 
+  market,
+  networkEdges = [],
+  nodeCoordinates,
+  onMarkerClick, 
+  route,
+  routes = []
+}: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
   const markersRef = useRef<mapboxgl.Marker[]>([])
-  const routeLayerRef = useRef<string | null>(null)
+  const routeLayerRef = useRef<string[]>([])
+  const networkLayerRef = useRef<string[]>([])
 
   useEffect(() => {
     const token = import.meta.env.VITE_MAPBOX_TOKEN
@@ -45,7 +67,7 @@ export function MapView({ className, markers = [], onMarkerClick, route }: MapVi
       map.current = new mapboxgl.Map({
         container: mapContainer.current,
         style: 'mapbox://styles/mapbox/dark-v11',
-        center: [-96.7970, 32.7767],
+        center: [-97.1331, 33.2148], // Denton, Texas coordinates
         zoom: 12,
         accessToken: token,
       })
@@ -60,51 +82,82 @@ export function MapView({ className, markers = [], onMarkerClick, route }: MapVi
   }, [])
 
   useEffect(() => {
-    if (!map.current || markers.length === 0) return
+    if (!map.current) return
 
     // Clear existing markers
     markersRef.current.forEach(marker => marker.remove())
     markersRef.current = []
 
-    // Add new markers
-    markers.forEach(({ id, latitude, longitude, status, name, level }) => {
-      const getLevelColor = (level: number, status: string) => {
+    // Auto-fit map to show all markers if available
+    const allPoints: Array<{ lat: number; lng: number }> = []
+    if (market) {
+      allPoints.push({ lat: market.latitude, lng: market.longitude })
+    }
+    markers.forEach(m => {
+      allPoints.push({ lat: m.latitude, lng: m.longitude })
+    })
+
+    // Add market marker if provided
+    if (market) {
+      const el = document.createElement('div')
+      el.className = 'market-marker'
+      el.innerHTML = '⭐'
+      el.style.fontSize = '24px'
+      el.style.cursor = 'pointer'
+      el.style.textAlign = 'center'
+      el.style.lineHeight = '1'
+      el.title = market.name
+
+      const marker = new mapboxgl.Marker(el)
+        .setLngLat([market.longitude, market.latitude])
+        .addTo(map.current!)
+
+      if (onMarkerClick) {
+        el.addEventListener('click', () => onMarkerClick(market.id))
+      }
+
+      markersRef.current.push(marker)
+    }
+
+    // Add cauldron markers
+    markers.forEach(({ id, latitude, longitude, status, name, level, fillPercent, lastUpdated }) => {
+      const getLevelColor = (fillPercent: number | undefined, status: string) => {
         // If offline, return gray
         if (status === 'offline') {
           return '#6b7280'
         }
         
-        // Calculate color based on level
+        // fillPercent should always be provided, but use 0 as fallback
+        const percent = fillPercent !== undefined ? fillPercent : 0
+        
+        // Calculate color based on fill percentage
         // Green (0-30%) -> Yellow (30-80%) -> Red (80-100%)
-        if (level >= 0 && level < 30) {
-          // Green: #10b981
-          return '#10b981'
-        } else if (level >= 30 && level < 80) {
-          // Interpolate between green and yellow
-          const ratio = (level - 30) / 50 // 0 to 1 as level goes from 30 to 80
-          const r = Math.round(16 + (245 - 16) * ratio) // 16 -> 245
-          const g = Math.round(185 + (158 - 185) * ratio) // 185 -> 158
-          const b = Math.round(129 + (30 - 129) * ratio) // 129 -> 30
-          return `rgb(${r}, ${g}, ${b})`
+        if (percent < 30) {
+          return '#10b981' // Green
+        } else if (percent < 80) {
+          return '#f59e0b' // Yellow
         } else {
-          // Interpolate between yellow and red
-          const ratio = (level - 80) / 20 // 0 to 1 as level goes from 80 to 100
-          const r = Math.round(245 + (239 - 245) * ratio) // 245 -> 239
-          const g = Math.round(158 + (68 - 158) * ratio) // 158 -> 68
-          const b = Math.round(30 + (68 - 30) * ratio) // 30 -> 68
-          return `rgb(${r}, ${g}, ${b})`
+          return '#ef4444' // Red
         }
       }
 
       const el = document.createElement('div')
       el.className = 'marker'
-      el.style.width = '20px'
-      el.style.height = '20px'
+      const size = fillPercent !== undefined 
+        ? Math.max(12, Math.min(30, 12 + (fillPercent / 100) * 18)) // Size proportional to fill
+        : 20
+      el.style.width = `${size}px`
+      el.style.height = `${size}px`
       el.style.borderRadius = '50%'
-      el.style.backgroundColor = getLevelColor(level, status)
+      el.style.backgroundColor = getLevelColor(fillPercent, status)
       el.style.border = '2px solid white'
       el.style.cursor = 'pointer'
-      el.title = `${name} - ${level}%`
+      el.style.boxShadow = '0 2px 4px rgba(0,0,0,0.3)'
+      
+      const tooltipText = fillPercent !== undefined
+        ? `${name}\nFill: ${fillPercent.toFixed(1)}%\nLevel: ${level.toFixed(1)}L${lastUpdated ? `\nUpdated: ${new Date(lastUpdated).toLocaleTimeString()}` : ''}`
+        : `${name} - ${level}%`
+      el.title = tooltipText
 
       const marker = new mapboxgl.Marker(el)
         .setLngLat([longitude, latitude])
@@ -117,95 +170,164 @@ export function MapView({ className, markers = [], onMarkerClick, route }: MapVi
       markersRef.current.push(marker)
     })
 
-    // Draw route if provided
-    if (route && route.length > 1 && map.current) {
-      // Remove existing route layer if it exists
-      if (routeLayerRef.current && map.current.getLayer(routeLayerRef.current)) {
-        map.current.removeLayer(routeLayerRef.current)
-        map.current.removeSource(routeLayerRef.current)
-      }
+    // Auto-fit map to bounds if we have points
+    if (allPoints.length > 0 && map.current.isStyleLoaded()) {
+      const bounds = new mapboxgl.LngLatBounds()
+      allPoints.forEach(point => {
+        bounds.extend([point.lng, point.lat])
+      })
+      
+      // Add some padding
+      map.current.fitBounds(bounds, {
+        padding: { top: 50, bottom: 50, left: 50, right: 50 },
+        maxZoom: 14,
+      })
+    } else if (allPoints.length > 0) {
+      // If map isn't loaded yet, wait for it
+      map.current.once('load', () => {
+        const bounds = new mapboxgl.LngLatBounds()
+        allPoints.forEach(point => {
+          bounds.extend([point.lng, point.lat])
+        })
+        
+        map.current!.fitBounds(bounds, {
+          padding: { top: 50, bottom: 50, left: 50, right: 50 },
+          maxZoom: 14,
+        })
+      })
+    }
 
-      const routeCoordinates = route.map(point => [point.longitude, point.latitude])
+    // Helper function to add/update route
+    const addRoute = (routeId: string, coordinates: number[][], color: string = '#10b981', width: number = 3) => {
+      if (!map.current) return
 
-      map.current.on('load', () => {
+      const addRouteLayer = () => {
         if (!map.current) return
 
-        map.current.addSource('route', {
-          type: 'geojson',
-          data: {
+        if (map.current.getSource(routeId)) {
+          // Update existing route
+          const source = map.current.getSource(routeId) as mapboxgl.GeoJSONSource
+          source.setData({
             type: 'Feature',
             properties: {},
             geometry: {
               type: 'LineString',
-              coordinates: routeCoordinates,
+              coordinates,
             },
-          },
-        })
-
-        map.current.addLayer({
-          id: 'route',
-          type: 'line',
-          source: 'route',
-          layout: {
-            'line-join': 'round',
-            'line-cap': 'round',
-          },
-          paint: {
-            'line-color': '#10b981',
-            'line-width': 3,
-            'line-dasharray': [2, 2],
-          },
-        })
-
-        routeLayerRef.current = 'route'
-      })
-
-      // If map is already loaded, add route immediately
-      if (map.current.isStyleLoaded()) {
-        if (!map.current.getSource('route')) {
-          map.current.addSource('route', {
+          })
+        } else {
+          // Add new route
+          map.current.addSource(routeId, {
             type: 'geojson',
             data: {
               type: 'Feature',
               properties: {},
               geometry: {
                 type: 'LineString',
-                coordinates: routeCoordinates,
+                coordinates,
               },
             },
           })
 
           map.current.addLayer({
-            id: 'route',
+            id: routeId,
             type: 'line',
-            source: 'route',
+            source: routeId,
             layout: {
               'line-join': 'round',
               'line-cap': 'round',
             },
             paint: {
-              'line-color': '#10b981',
-              'line-width': 3,
+              'line-color': color,
+              'line-width': width,
               'line-dasharray': [2, 2],
-            },
-          })
-
-          routeLayerRef.current = 'route'
-        } else {
-          // Update existing route
-          const source = map.current.getSource('route') as mapboxgl.GeoJSONSource
-          source.setData({
-            type: 'Feature',
-            properties: {},
-            geometry: {
-              type: 'LineString',
-              coordinates: routeCoordinates,
             },
           })
         }
       }
+
+      if (map.current.isStyleLoaded()) {
+        addRouteLayer()
+      } else {
+        map.current.once('load', addRouteLayer)
+      }
     }
-  }, [markers, onMarkerClick, route])
+
+    // Draw single route if provided
+    if (route && route.length > 1) {
+      const routeCoordinates = route.map(point => [point.longitude, point.latitude])
+      addRoute('route', routeCoordinates)
+      if (!routeLayerRef.current.includes('route')) {
+        routeLayerRef.current.push('route')
+      }
+    }
+
+    // Draw multiple routes if provided
+    routes.forEach((routePoints, index) => {
+      if (routePoints.length > 1) {
+        const routeId = `route-${index}`
+        const routeCoordinates = routePoints.map(point => [point.longitude, point.latitude])
+        const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444']
+        const color = colors[index % colors.length]
+        addRoute(routeId, routeCoordinates, color, 2)
+        if (!routeLayerRef.current.includes(routeId)) {
+          routeLayerRef.current.push(routeId)
+        }
+      }
+    })
+
+    // Draw network edges if provided
+    if (networkEdges.length > 0 && nodeCoordinates) {
+      networkEdges.forEach((edge, index) => {
+        const fromCoords = nodeCoordinates.get(edge.from)
+        const toCoords = nodeCoordinates.get(edge.to)
+        
+        if (fromCoords && toCoords) {
+          const edgeId = `network-edge-${index}`
+          const coordinates = [
+            [fromCoords.longitude, fromCoords.latitude],
+            [toCoords.longitude, toCoords.latitude]
+          ]
+          
+          // Color/thickness based on travel time
+          const travelTime = edge.travel_time_minutes || 0
+          const color = travelTime < 15 ? '#10b981' : travelTime < 30 ? '#f59e0b' : '#ef4444'
+          const width = Math.max(1, Math.min(3, travelTime / 20))
+          
+          addRoute(edgeId, coordinates, color, width)
+          if (!networkLayerRef.current.includes(edgeId)) {
+            networkLayerRef.current.push(edgeId)
+          }
+        }
+      })
+    }
+
+    // Cleanup: Remove old route layers that are no longer needed
+    return () => {
+      if (!map.current) return
+      
+      routeLayerRef.current.forEach(layerId => {
+        if (map.current!.getLayer(layerId)) {
+          map.current!.removeLayer(layerId)
+        }
+        if (map.current!.getSource(layerId)) {
+          map.current!.removeSource(layerId)
+        }
+      })
+      
+      networkLayerRef.current.forEach(layerId => {
+        if (map.current!.getLayer(layerId)) {
+          map.current!.removeLayer(layerId)
+        }
+        if (map.current!.getSource(layerId)) {
+          map.current!.removeSource(layerId)
+        }
+      })
+      
+      routeLayerRef.current = []
+      networkLayerRef.current = []
+    }
+  }, [markers, market, networkEdges, nodeCoordinates, onMarkerClick, route, routes])
 
   return (
     <div className={cn("w-full h-full min-h-[400px] rounded-lg overflow-hidden", className)}>

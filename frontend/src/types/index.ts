@@ -35,6 +35,29 @@ export const TicketSchema = z.object({
   updatedAt: z.string(),
 })
 
+// EOG API Ticket Types
+export type TransportTicket = {
+  ticket_id: string
+  cauldron_id: string
+  amount_collected: number
+  courier_id: string
+  date: string
+}
+
+export type TicketMetadata = {
+  total_tickets: number
+  suspicious_tickets: number
+  date_range: {
+    start: string
+    end: string
+  }
+}
+
+export type TicketsResponse = {
+  metadata: TicketMetadata
+  transport_tickets: TransportTicket[]
+}
+
 export const DiscrepancyDataPointSchema = z.object({
   date: z.string(),
   descrepency: z.number(),
@@ -131,5 +154,6 @@ export type Market = {
   name: string
   latitude: number
   longitude: number
+  description?: string
 }
 

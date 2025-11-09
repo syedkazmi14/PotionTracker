@@ -1,4 +1,4 @@
-import { Cauldron, CauldronDataPoint, Anomaly, Ticket, DiscrepancyData, CauldronInfo, CauldronLevelsData, Forecast, DailySchedule, Courier, Market, Network } from '@/types'
+import { Cauldron, CauldronDataPoint, Anomaly, Ticket, DiscrepancyData, CauldronInfo, CauldronLevelsData, Forecast, DailySchedule, Courier, Market, Network, TicketsResponse, TransportTicket } from '@/types'
 import { DateTime } from 'luxon'
 
 // Mock data
@@ -203,8 +203,35 @@ export const api = {
   },
 
   async getCauldronData(id: string, hours: number = 24): Promise<CauldronDataPoint[]> {
-    await new Promise(resolve => setTimeout(resolve, 200))
-    return generateMockDataPoints(id, hours)
+    try {
+      // Fetch real data from API
+      const response = await fetch('http://localhost:5000/api/cauldron-levels-data')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data: CauldronLevelsData[] = await response.json()
+      
+      // Filter and transform data for this cauldron
+      const now = DateTime.now()
+      const cutoffTime = now.minus({ hours })
+      
+      const points: CauldronDataPoint[] = data
+        .filter(item => {
+          const timestamp = DateTime.fromISO(item.timestamp)
+          return timestamp >= cutoffTime && item.cauldron_levels[id] !== undefined
+        })
+        .map(item => ({
+          time: item.timestamp,
+          level: item.cauldron_levels[id] || 0,
+        }))
+        .sort((a, b) => DateTime.fromISO(a.time).toMillis() - DateTime.fromISO(b.time).toMillis())
+      
+      return points
+    } catch (error) {
+      console.error('Failed to fetch cauldron data:', error)
+      // Fallback to mock data if API fails
+      return generateMockDataPoints(id, hours)
+    }
   },
 
   async getAnomalies(cauldronId?: string): Promise<Anomaly[]> {
@@ -215,12 +242,53 @@ export const api = {
     return [...mockAnomalies]
   },
 
-  async getTickets(cauldronId?: string): Promise<Ticket[]> {
-    await new Promise(resolve => setTimeout(resolve, 200))
-    if (cauldronId) {
-      return mockTickets.filter(t => t.cauldronId === cauldronId)
+  async getTickets(cauldronId?: string): Promise<TransportTicket[]> {
+    try {
+      const response = await fetch('http://localhost:5000/api/tickets')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data: TicketsResponse = await response.json()
+      
+      // Filter by cauldron ID if provided
+      let tickets = data.transport_tickets || []
+      if (cauldronId) {
+        tickets = tickets.filter(t => t.cauldron_id === cauldronId)
+      }
+      
+      // Sort by date (newest first)
+      tickets.sort((a, b) => {
+        const dateA = DateTime.fromISO(a.date)
+        const dateB = DateTime.fromISO(b.date)
+        return dateB.toMillis() - dateA.toMillis()
+      })
+      
+      return tickets
+    } catch (error) {
+      console.error('Failed to fetch tickets:', error)
+      // Fallback to empty array if API fails
+      return []
     }
-    return [...mockTickets]
+  },
+
+  async getTicketsMetadata(): Promise<TicketsResponse> {
+    try {
+      const response = await fetch('http://localhost:5000/api/tickets')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      return await response.json()
+    } catch (error) {
+      console.error('Failed to fetch tickets metadata:', error)
+      return {
+        metadata: {
+          total_tickets: 0,
+          suspicious_tickets: 0,
+          date_range: { start: '', end: '' }
+        },
+        transport_tickets: []
+      }
+    }
   },
 
   async createTicket(data: { cauldronId: string; title: string; description: string }): Promise<Ticket> {

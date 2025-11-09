@@ -43,7 +43,7 @@ cached_market = None
 cached_network = None
 cache_timestamp = None
 CACHE_DURATION_SECONDS = 3600  # Cache for 1 hour
-
+live_db = None
 # ===================================================================
 # BACKGROUND WORKER THREADS
 # ===================================================================
@@ -55,7 +55,7 @@ def tcp_client_worker():
     """
     HOST = '0.0.0.0'
     PORT = 3000
-
+    global live_db 
     while True:
         try:
             print("[TCP Thread] Attempting to connect...")
@@ -181,6 +181,24 @@ def get_drain_rate_section_route(cauldron_id, date):
         abort(404, description="Drain rate data not found for the specified cauldron and date.")
     return json.dumps(result.to_dict())
 
+@app.route("/api/live_drain_rate/<cauldron_id>/<date>")
+def get_live_drain_rate_section_route(cauldron_id, date):
+    with df_lock: # Acquire lock before reading
+        if live_db is None:
+            abort(503, description="Data is not available yet. Please try again later.")
+        db = calculate_daily_drain_rates(live_db)
+        result = db[(db["cauldron"] == cauldron_id) & (db["date"] == date)]
+    
+    if result.empty:
+        abort(404, description="Drain rate data not found for the specified cauldron and date.")
+    return json.dumps(result.to_dict())
+@app.route("/api/live_data")
+def live_data():
+    try:
+        return json.dumps(live_db.to_dict())
+    except:
+        pass
+
 @app.route("/api/fill_rate/<cauldron_id>/<date>")
 def get_fill_rate_section_route(cauldron_id, date):
     with df_lock: # Acquire lock before reading
@@ -193,8 +211,12 @@ def get_fill_rate_section_route(cauldron_id, date):
     return json.dumps(result.to_dict())
 
 @app.route("/api/get_descrepencies/")
-def get_descrepencies():
+def get_live_descrepencies():
     return verify_cauldrons(data_db)
+
+@app.route("/api/live_get_descrepencies/")
+def get_descrepencies():
+    return verify_cauldrons(live_db)
 
 @app.route("/api/live_data")
 def get_live_data():
@@ -347,8 +369,17 @@ def get_tickets_endpoint():
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
 
-# @app.route("/api/live_fill_rate/<cauldron_id>"):
-#     pass
+@app.route("/api/live_fill_rate/<cauldron_id>")
+def get_fill_rate_live(cauldron_id, date):
+    with df_lock: # Acquire lock before reading
+        if live_db is None:
+            abort(503, description="Data is not available yet. Please try again later.")
+        db = calculate_daily_slopes(live_db)
+        result = db[(db["cauldron"] == cauldron_id) & (db["date"] == date)]
+
+    if result.empty:
+        abort(404, description="Fill rate data not found for the specified cauldron and date.")
+    return json.dumps(result.to_dict())
 
 # Test route to verify new endpoints are loaded
 @app.route("/api/test-forecast")

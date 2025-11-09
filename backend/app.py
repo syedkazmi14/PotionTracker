@@ -127,7 +127,6 @@ def initial_load():
 # FLASK APPLICATION SETUP
 # ===================================================================
 app = Flask(__name__)
-<<<<<<< Updated upstream
 
 # Enable CORS for all routes
 @app.after_request
@@ -168,10 +167,8 @@ else:
     data_db=get_cauldron_data()
     data_db.to_csv(DATA_DB,header=True, index=False)
 
-=======
 initial_load()
 # --- Routes ---
->>>>>>> Stashed changes
 @app.route('/')
 def index():
     return "Hello, World!"
@@ -212,7 +209,6 @@ def amounts():
 
 @app.route("/api/get_descrepencies/")
 def get_descrepencies():
-<<<<<<< Updated upstream
     return verify_cauldrons()
 
 @app.route("/api/live_data")
@@ -242,11 +238,6 @@ def update_live_data():
         return jsonify(tcp_server.latest_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-=======
-    # Assuming verify_cauldrons uses the global dataframes, it should also be locked
-    with df_lock:
-        return verify_cauldrons()
->>>>>>> Stashed changes
 
 @app.route("/api/cauldrons-info")
 @app.route("/api/proxy/cauldrons-info")

@@ -22,10 +22,10 @@ export function MainLayout() {
     <div className={cn("min-h-screen", isWitchView ? "bg-green-50" : "bg-background")}>
       {/* Topbar */}
       <header className={cn(
-        "sticky top-0 z-50 w-full border-b backdrop-blur supports-[backdrop-filter]:bg-background/60",
+        "sticky top-0 z-50 w-full border-b",
         isWitchView 
-          ? "bg-green-50/95 border-green-200" 
-          : "bg-background/95"
+          ? "bg-white border-green-200" 
+          : "bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60"
       )}>
         <div className="container flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-4">
@@ -52,7 +52,7 @@ export function MainLayout() {
                   />
                 </svg>
               </span>
-              <h1 className={cn("text-xl font-bold", isWitchView && "text-green-800")}>CauldronWatch</h1>
+              <h1 className={cn("text-xl font-bold", isWitchView && "text-green-800")}>WitchWatch</h1>
             </div>
           </div>
           <div className={cn("text-sm", isWitchView ? "text-green-700" : "text-muted-foreground")}>

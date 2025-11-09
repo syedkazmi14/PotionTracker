@@ -198,7 +198,7 @@ export function MapView({
     }
 
     // Helper function to add/update route
-    const addRoute = (routeId: string, coordinates: number[][], color: string = '#10b981', width: number = 3) => {
+    const addRoute = (routeId: string, coordinates: number[][], color: string = '#10b981', width: number = 3, isDotted: boolean = false) => {
       if (!map.current) return
 
       const addRouteLayer = () => {
@@ -215,6 +215,11 @@ export function MapView({
               coordinates,
             },
           })
+          
+          // Update layer paint properties if needed (especially for dotted lines)
+          if (isDotted && map.current.getLayer(routeId)) {
+            map.current.setPaintProperty(routeId, 'line-dasharray', [4, 3])
+          }
         } else {
           // Add new route
           map.current.addSource(routeId, {
@@ -229,6 +234,15 @@ export function MapView({
             },
           })
 
+          const paintProperties: mapboxgl.LinePaint = {
+            'line-color': color,
+            'line-width': width,
+          }
+          
+          if (isDotted) {
+            paintProperties['line-dasharray'] = [4, 3]
+          }
+
           map.current.addLayer({
             id: routeId,
             type: 'line',
@@ -237,11 +251,7 @@ export function MapView({
               'line-join': 'round',
               'line-cap': 'round',
             },
-            paint: {
-              'line-color': color,
-              'line-width': width,
-              'line-dasharray': [2, 2],
-            },
+            paint: paintProperties,
           })
         }
       }
@@ -253,10 +263,10 @@ export function MapView({
       }
     }
 
-    // Draw single route if provided
+    // Draw single route if provided (as dotted line for witch view)
     if (route && route.length > 1) {
       const routeCoordinates = route.map(point => [point.longitude, point.latitude])
-      addRoute('route', routeCoordinates)
+      addRoute('route', routeCoordinates, '#10b981', 3, true)
       if (!routeLayerRef.current.includes('route')) {
         routeLayerRef.current.push('route')
       }

@@ -161,11 +161,52 @@ export function WitchViewPage() {
     lastUpdated: cauldron.lastUpdated,
   }))
 
-  // Create route for map
-  const route = optimizedRoute.map(cauldron => ({
-    latitude: cauldron.latitude,
-    longitude: cauldron.longitude,
-  }))
+  // Create route for map: market -> cauldrons -> market
+  const route = useMemo(() => {
+    const routePoints: Array<{ latitude: number; longitude: number }> = []
+    
+    // Start from market if available
+    if (market) {
+      routePoints.push({
+        latitude: market.latitude,
+        longitude: market.longitude,
+      })
+    }
+    
+    // Add optimized cauldron route
+    optimizedRoute.forEach(cauldron => {
+      routePoints.push({
+        latitude: cauldron.latitude,
+        longitude: cauldron.longitude,
+      })
+    })
+    
+    // Return to market if available
+    if (market && optimizedRoute.length > 0) {
+      routePoints.push({
+        latitude: market.latitude,
+        longitude: market.longitude,
+      })
+    }
+    
+    return routePoints
+  }, [optimizedRoute, market])
+
+  // Calculate total distance
+  const totalDistance = useMemo(() => {
+    if (route.length < 2) return 0
+    
+    let distance = 0
+    for (let i = 0; i < route.length - 1; i++) {
+      distance += calculateDistance(
+        route[i].latitude,
+        route[i].longitude,
+        route[i + 1].latitude,
+        route[i + 1].longitude
+      )
+    }
+    return distance
+  }, [route])
 
   const handleCreateTicket = async (cauldronId: string) => {
     if (!ticketForm.title.trim() || !ticketForm.description.trim()) {
@@ -249,7 +290,7 @@ export function WitchViewPage() {
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Route List */}
         <div className="lg:col-span-1 space-y-4">
-          <Card className="border-green-200 bg-green-50/50">
+          <Card className="border-green-200 bg-white text-gray-900">
             <CardHeader>
               <CardTitle className="text-green-800">Optimized Route</CardTitle>
             </CardHeader>
@@ -305,7 +346,7 @@ export function WitchViewPage() {
 
           {/* Suggested Pickups */}
           {suggestedPickups.length > 0 && (
-            <Card className="border-yellow-200 bg-yellow-50/50">
+            <Card className="border-yellow-200 bg-white text-gray-900">
               <CardHeader>
                 <CardTitle className="text-yellow-800 flex items-center gap-2">
                   <AlertTriangle className="h-5 w-5" />
@@ -359,7 +400,7 @@ export function WitchViewPage() {
 
           {/* Ticket Form */}
           {showTicketForm && selectedStopIndex !== null && (
-            <Card className="border-green-200 bg-green-50/50">
+            <Card className="border-green-200 bg-white text-gray-900">
               <CardHeader>
                 <div className="flex items-center justify-between">
                   <CardTitle className="text-green-800">
@@ -417,7 +458,17 @@ export function WitchViewPage() {
 
         {/* Map */}
         <div className="lg:col-span-2">
-          <Card className="border-green-200">
+          <Card className="border-green-200 bg-white text-gray-900">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-green-800">Route Map</CardTitle>
+                {totalDistance > 0 && (
+                  <div className="text-sm font-medium text-green-700">
+                    Total Distance: {totalDistance.toFixed(2)} km
+                  </div>
+                )}
+              </div>
+            </CardHeader>
             <CardContent className="p-0">
               <MapView
                 markers={markers}

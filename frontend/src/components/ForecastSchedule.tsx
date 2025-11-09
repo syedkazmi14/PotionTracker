@@ -189,7 +189,7 @@ export function ForecastSchedule() {
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Couriers Needed Today</CardTitle>
           </CardHeader>
@@ -204,7 +204,7 @@ export function ForecastSchedule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">At Risk Cauldrons</CardTitle>
           </CardHeader>
@@ -219,7 +219,7 @@ export function ForecastSchedule() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-gray-600">Total Forecasts</CardTitle>
           </CardHeader>
@@ -237,14 +237,14 @@ export function ForecastSchedule() {
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Forecast Chart */}
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader>
-            <CardTitle>Brew Level Forecast</CardTitle>
+            <CardTitle className="text-gray-900">Brew Level Forecast</CardTitle>
             <div className="mt-2">
               <select
                 value={selectedCauldron || ''}
                 onChange={(e) => setSelectedCauldron(e.target.value || null)}
-                className="text-sm border rounded px-2 py-1"
+                className="text-sm border rounded px-2 py-1 text-gray-900 bg-white"
               >
                 <option value="">All Cauldrons (First)</option>
                 {forecasts.map(f => {
@@ -290,9 +290,9 @@ export function ForecastSchedule() {
         </Card>
 
         {/* Courier Requirements Chart */}
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader>
-            <CardTitle>Daily Courier Requirements</CardTitle>
+            <CardTitle className="text-gray-900">Daily Courier Requirements</CardTitle>
           </CardHeader>
           <CardContent>
             {courierData.length > 0 ? (
@@ -314,14 +314,14 @@ export function ForecastSchedule() {
 
       {/* Schedule Assignments */}
       {schedule && schedule.assignments.length > 0 && (
-        <Card>
+        <Card className="bg-white text-gray-900">
           <CardHeader>
-            <CardTitle>Today's Courier Assignments</CardTitle>
+            <CardTitle className="text-gray-900">Today's Courier Assignments</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               {schedule.assignments.map((assignment, idx) => (
-                <div key={idx} className="border rounded-lg p-4">
+                <div key={idx} className="border rounded-lg p-4 bg-white">
                   <div className="flex items-start justify-between mb-2">
                     <div>
                       <h3 className="font-semibold text-gray-900">{assignment.courier}</h3>
@@ -329,7 +329,7 @@ export function ForecastSchedule() {
                         {assignment.start} - {assignment.end} ({assignment.total_time_minutes} min)
                       </p>
                     </div>
-                    <Badge variant="outline">
+                    <Badge variant="outline" className="text-gray-900">
                       {assignment.volume_collected.toFixed(1)} L
                     </Badge>
                   </div>
@@ -337,7 +337,7 @@ export function ForecastSchedule() {
                     <p className="text-sm font-medium text-gray-700 mb-1">Route:</p>
                     <div className="flex flex-wrap gap-2">
                       {assignment.route.map((node, i) => (
-                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded">
+                        <span key={i} className="text-xs bg-gray-100 px-2 py-1 rounded text-gray-900">
                           {i + 1}. {node}
                         </span>
                       ))}
@@ -349,7 +349,7 @@ export function ForecastSchedule() {
                       {assignment.cauldrons_visited.map(cauldronId => {
                         const cauldron = cauldronsInfo.find(c => c.id === cauldronId)
                         return (
-                          <Badge key={cauldronId} variant="secondary">
+                          <Badge key={cauldronId} variant="secondary" className="text-gray-900">
                             {cauldron?.name || cauldronId}
                           </Badge>
                         )
@@ -364,9 +364,9 @@ export function ForecastSchedule() {
       )}
 
       {/* Route Visualization */}
-      <Card>
+      <Card className="bg-white text-gray-900">
         <CardHeader>
-          <CardTitle>Route Visualization</CardTitle>
+          <CardTitle className="text-gray-900">Route Visualization</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <MapView
@@ -378,21 +378,21 @@ export function ForecastSchedule() {
       </Card>
 
       {/* Forecast Details Table */}
-      <Card>
+      <Card className="bg-white text-gray-900">
         <CardHeader>
-          <CardTitle>Forecast Details</CardTitle>
+          <CardTitle className="text-gray-900">Forecast Details</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b">
-                  <th className="text-left p-2">Cauldron</th>
-                  <th className="text-left p-2">Current Level</th>
-                  <th className="text-left p-2">Brew Rate (L/h)</th>
-                  <th className="text-left p-2">Time to 90%</th>
-                  <th className="text-left p-2">Time to 100%</th>
-                  <th className="text-left p-2">Status</th>
+                  <th className="text-left p-2 text-gray-900">Cauldron</th>
+                  <th className="text-left p-2 text-gray-900">Current Level</th>
+                  <th className="text-left p-2 text-gray-900">Brew Rate (L/h)</th>
+                  <th className="text-left p-2 text-gray-900">Time to 90%</th>
+                  <th className="text-left p-2 text-gray-900">Time to 100%</th>
+                  <th className="text-left p-2 text-gray-900">Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -400,19 +400,19 @@ export function ForecastSchedule() {
                   const cauldron = cauldronsInfo.find(c => c.id === forecast.cauldron_id)
                   return (
                     <tr key={forecast.cauldron_id} className="border-b">
-                      <td className="p-2 font-medium">
+                      <td className="p-2 font-medium text-gray-900">
                         {cauldron?.name || forecast.cauldron_id}
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-gray-900">
                         {forecast.current_level.toFixed(1)} L ({forecast.current_percentage.toFixed(1)}%)
                       </td>
-                      <td className="p-2">{forecast.brew_rate_liters_per_hour.toFixed(2)}</td>
-                      <td className="p-2">
+                      <td className="p-2 text-gray-900">{forecast.brew_rate_liters_per_hour.toFixed(2)}</td>
+                      <td className="p-2 text-gray-900">
                         {forecast.time_to_90_percent 
                           ? DateTime.fromISO(forecast.time_to_90_percent).toFormat('MMM dd, HH:mm')
                           : 'N/A'}
                       </td>
-                      <td className="p-2">
+                      <td className="p-2 text-gray-900">
                         {forecast.time_to_100_percent 
                           ? DateTime.fromISO(forecast.time_to_100_percent).toFormat('MMM dd, HH:mm')
                           : 'N/A'}
@@ -421,7 +421,7 @@ export function ForecastSchedule() {
                         {forecast.at_risk_12h ? (
                           <Badge variant="destructive">At Risk</Badge>
                         ) : (
-                          <Badge variant="outline">Safe</Badge>
+                          <Badge variant="outline" className="text-gray-900">Safe</Badge>
                         )}
                       </td>
                     </tr>

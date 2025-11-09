@@ -4,12 +4,16 @@ import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+import { usePreloadData } from '@/hooks/usePreloadData'
 
 export function MainLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const lastUpdate = DateTime.now().toLocaleString(DateTime.TIME_WITH_SECONDS)
   const isWitchView = location.pathname === '/witch-view'
+  
+  // Preload all page data on app load
+  usePreloadData()
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },

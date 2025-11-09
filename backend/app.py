@@ -76,6 +76,7 @@ def tcp_client_worker():
                         bit = (bv_int >> i) & 1
                         bit_array.append(bit)
                     
+                    print(pot1_int, pot2_int, bit_array)
                     # Safely append data to our shared deque
                     with tcp_data_lock:
                         tcp_data.append({'timestamp': time.time(), 'message': decoded_data})
@@ -100,8 +101,8 @@ def data_update_worker():
         try:
             # Perform the expensive calculations first
             new_data_db = get_cauldron_data()
-            new_fill_rate_df = calculate_daily_slopes()
-            new_drain_rate_df = calculate_daily_drain_rates()
+            new_fill_rate_df = calculate_daily_slopes(new_data_db)
+            new_drain_rate_df = calculate_daily_drain_rates(new_data_db)
             
             # --- CRITICAL SECTION: Acquire the lock to update global variables ---
             with df_lock:
@@ -135,8 +136,8 @@ def initial_load():
     print("[Main Thread] Performing initial data load...")
     with df_lock: # Use lock even here for consistency
         data_db = get_cauldron_data()
-        fill_rate_df = calculate_daily_slopes()
-        drain_rate_df = calculate_daily_drain_rates()
+        fill_rate_df = calculate_daily_slopes(data_db)
+        drain_rate_df = calculate_daily_drain_rates(data_db)
         # Also save to disk on first run
         data_db.to_csv("data.csv", header=True, index=False)
         fill_rate_df.to_csv("fill_rate_db.csv", header=True, index=False)
@@ -162,30 +163,6 @@ try:
     print("TCP server started successfully")
 except Exception as e:
     print(f"Failed to start TCP server: {e}")
-
-# The line "from app import routes" has been removed.
-
-DRAIN_RATE_DB = "drain_rate_db.csv"
-FILL_RATE_DB = "fill_rate_db.csv"
-DATA_DB = "data.csv"
-
-# Load data on startup instead of on every request
-if Path(DRAIN_RATE_DB).exists():
-    drain_rate_df = pd.read_csv(DRAIN_RATE_DB)
-else:
-    drain_rate_df = calculate_daily_drain_rates()
-    drain_rate_df.to_csv(DRAIN_RATE_DB, header=True, index=False)
-
-if Path(FILL_RATE_DB).exists():
-    fill_rate_df = pd.read_csv(FILL_RATE_DB)
-else:
-    fill_rate_df = calculate_daily_slopes()
-    fill_rate_df.to_csv(FILL_RATE_DB, header=True, index=False)
-if Path(DATA_DB).exists():
-    data_db = pd.read_csv(DATA_DB)
-else:
-    data_db=get_cauldron_data()
-    data_db.to_csv(DATA_DB,header=True, index=False)
 
 initial_load()
 # --- Routes ---
@@ -215,16 +192,9 @@ def get_fill_rate_section_route(cauldron_id, date):
         abort(404, description="Fill rate data not found for the specified cauldron and date.")
     return json.dumps(result.to_dict())
 
-@app.route("/api/amounts")
-def amounts():
-    with df_lock: # Acquire lock before reading
-        if data_db is None:
-            abort(503, description="Data is not available yet. Please try again later.")
-        return json.dumps(data_db.to_dict())
-
 @app.route("/api/get_descrepencies/")
 def get_descrepencies():
-    return verify_cauldrons()
+    return verify_cauldrons(data_db)
 
 @app.route("/api/live_data")
 def get_live_data():
@@ -376,6 +346,9 @@ def get_tickets_endpoint():
         return jsonify(response.json())
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
+
+# @app.route("/api/live_fill_rate/<cauldron_id>"):
+#     pass
 
 # Test route to verify new endpoints are loaded
 @app.route("/api/test-forecast")

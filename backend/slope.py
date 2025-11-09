@@ -3,8 +3,7 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from utils import get_cauldron_data
 
-def calculate_daily_slopes():
-    df = get_cauldron_data()
+def calculate_daily_slopes(df):
     # Step 1: Ensure the 'time' column is in the correct datetime format. This is critical.
     print("Checking 'time' column data type...")
     if 'datetime64' not in str(df['time'].dtype):
@@ -118,8 +117,7 @@ def calculate_daily_slopes():
     print(final_summary)
     return final_summary
 
-def calculate_daily_drain_rates():
-    df = get_cauldron_data()
+def calculate_daily_drain_rates(df):
     print("Checking 'time' column data type...")
     if 'datetime64' not in str(df['time'].dtype):
         print("Converting 'time' column from numeric to datetime...")

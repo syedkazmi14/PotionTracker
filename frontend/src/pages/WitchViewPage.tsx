@@ -134,17 +134,17 @@ export function WitchViewPage() {
   }
 
   if (isLoading) {
-    return <div className="text-center py-12">Loading route...</div>
+    return <div className="text-center py-12 text-gray-900">Loading route...</div>
   }
 
   return (
     <div className="space-y-6" style={{ colorScheme: 'light' }}>
       <div>
-        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+        <h2 className="text-3xl font-bold tracking-tight flex items-center gap-2 text-gray-900">
           <Wand2 className="h-8 w-8 text-green-600" />
           Witch View
         </h2>
-        <p className="text-muted-foreground">Optimized route for cauldron maintenance</p>
+        <p className="text-gray-700">Optimized route for cauldron maintenance</p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -227,7 +227,7 @@ export function WitchViewPage() {
                     type="text"
                     value={ticketForm.title}
                     onChange={(e) => setTicketForm({ ...ticketForm, title: e.target.value })}
-                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 placeholder:text-gray-500"
                     placeholder="Enter ticket title"
                   />
                 </div>
@@ -238,7 +238,7 @@ export function WitchViewPage() {
                   <textarea
                     value={ticketForm.description}
                     onChange={(e) => setTicketForm({ ...ticketForm, description: e.target.value })}
-                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+                    className="w-full px-3 py-2 border border-green-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500 text-gray-900 placeholder:text-gray-500"
                     rows={4}
                     placeholder="Enter ticket description"
                   />

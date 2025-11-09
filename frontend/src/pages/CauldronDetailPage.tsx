@@ -99,7 +99,10 @@ export function CauldronDetailPage() {
               <CartesianGrid strokeDasharray="3 3" />
               <XAxis dataKey="time" />
               <YAxis />
-              <Tooltip />
+              <Tooltip 
+                contentStyle={{ backgroundColor: 'white', border: '1px solid #ccc', color: '#000' }}
+                labelStyle={{ color: '#000' }}
+              />
               <Line type="monotone" dataKey="level" stroke="#683cfc" strokeWidth={2} />
             </LineChart>
           </ResponsiveContainer>

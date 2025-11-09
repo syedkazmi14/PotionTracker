@@ -35,8 +35,15 @@ export const TicketSchema = z.object({
   updatedAt: z.string(),
 })
 
+export const DiscrepancyDataPointSchema = z.object({
+  date: z.string(),
+  descrepency: z.number(),
+})
+
 export type Cauldron = z.infer<typeof CauldronSchema>
 export type CauldronDataPoint = z.infer<typeof CauldronDataPointSchema>
 export type Anomaly = z.infer<typeof AnomalySchema>
 export type Ticket = z.infer<typeof TicketSchema>
+export type DiscrepancyDataPoint = z.infer<typeof DiscrepancyDataPointSchema>
+export type DiscrepancyData = Record<string, DiscrepancyDataPoint[]>
 

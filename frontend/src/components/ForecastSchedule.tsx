@@ -760,66 +760,6 @@ export function ForecastSchedule() {
           </CardContent>
         </Card>
 
-        {/* Schedule Timeline Visualization */}
-        {schedule && schedule.assignments.length > 0 && (
-          <Card className="bg-white text-gray-900">
-            <CardHeader>
-              <CardTitle className="text-gray-900">Schedule Timeline</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                {schedule.assignments.map((assignment, idx) => {
-                  const startTime = DateTime.fromISO(assignment.start)
-                  const endTime = DateTime.fromISO(assignment.end)
-                  const duration = endTime.diff(startTime, 'hours').hours
-                  
-                  return (
-                    <div key={idx} className="border rounded-lg p-4 bg-gray-50">
-                      <div className="flex items-center justify-between mb-3">
-                        <h3 className="font-semibold text-gray-900">{assignment.courier}</h3>
-                        <div className="flex gap-2">
-                          <Badge variant="outline" className="text-gray-900">
-                            {assignment.volume_collected.toFixed(1)} L
-                          </Badge>
-                          {assignment.distance_km !== undefined && (
-                            <Badge variant="outline" className="text-gray-900">
-                              {assignment.distance_km.toFixed(2)} km
-                            </Badge>
-                          )}
-                        </div>
-                      </div>
-                      
-                      {/* Timeline Bar */}
-                      <div className="relative h-12 bg-gray-200 rounded-lg overflow-hidden mb-2">
-                        <div
-                          className="absolute top-0 bottom-0 bg-green-500 flex items-center justify-center text-white font-medium text-sm"
-                          style={{
-                            left: '0%',
-                            width: '100%',
-                          }}
-                        >
-                          {startTime.toFormat('HH:mm')} - {endTime.toFormat('HH:mm')} ({assignment.total_time_minutes} min)
-                        </div>
-                      </div>
-                      
-                      {/* Route Info */}
-                      <div className="text-xs text-gray-600">
-                        <p className="font-medium mb-1">Route:</p>
-                        <div className="flex flex-wrap gap-1">
-                          {assignment.route.map((node, i) => (
-                            <span key={i} className="bg-white px-2 py-1 rounded border">
-                              {i + 1}. {node === 'market' ? 'Market' : (cauldronsInfo.find(c => c.id === node)?.name || node)}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </CardContent>
-          </Card>
-        )}
       </div>
 
     </div>

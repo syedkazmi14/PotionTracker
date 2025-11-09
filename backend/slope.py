@@ -3,8 +3,6 @@ import numpy as np
 from sklearn.linear_model import LinearRegression
 from utils import get_cauldron_data
 
-
-
 def calculate_daily_slopes():
     df = get_cauldron_data()
     # Step 1: Ensure the 'time' column is in the correct datetime format. This is critical.
@@ -119,3 +117,76 @@ def calculate_daily_slopes():
     pd.set_option('display.max_rows', None)
     print(final_summary)
     return final_summary
+
+def calculate_daily_drain_rates():
+    df = get_cauldron_data()
+    print("Checking 'time' column data type...")
+    if 'datetime64' not in str(df['time'].dtype):
+        print("Converting 'time' column from numeric to datetime...")
+        df['time'] = pd.to_datetime(df['time'], unit='s')
+    else:
+        print("'time' column is already in the correct datetime format.")
+
+    # Step 2: Create a 'date' column for daily grouping.
+    df['date'] = df['time'].dt.date
+
+    # Step 3: Get the list of cauldron columns to analyze.
+    cauldron_columns = [col for col in df.columns if 'cauldron' in col]
+
+    # --- Step 4: Find every individual DRAINING section and calculate its metrics ---
+    all_section_results = []
+
+    print("\nProcessing all cauldrons to find negative (draining) sections...")
+    for cauldron_name in cauldron_columns:
+        # Look for periods where the level is decreasing.
+        is_decreasing = df[cauldron_name].diff() < 0
+
+        # Assign a unique ID to each continuous block of decreasing values.
+        blocks = (is_decreasing != is_decreasing.shift()).cumsum()
+
+        # Filter for only the rows that are part of a decreasing section.
+        decreasing_df = df[is_decreasing]
+
+        # Group the filtered rows by their unique block ID to isolate each section.
+        sections = decreasing_df.groupby(blocks)
+
+        # Loop through each individual section.
+        for _, section in sections:
+            # A valid section needs at least two points to fit a line.
+            if len(section) > 1:
+                # *** ADDITION: Get start and end times for the section ***
+                start_time = section['time'].min()
+                end_time = section['time'].max()
+
+                # Prepare data for linear regression.
+                time_numeric = (section['time'] - start_time).dt.total_seconds().values.reshape(-1, 1)
+                levels = section[cauldron_name].values
+
+                # Fit the linear regression model.
+                model = LinearRegression()
+                model.fit(time_numeric, levels)
+
+                # Get the slope (in level/minute) for this section.
+                slope_per_minute = model.coef_[0] * 60
+                section_duration_minutes = (end_time - start_time).total_seconds() / 60
+                
+                # Store the result for this drain section, including epoch times.
+                all_section_results.append({
+                    'cauldron': cauldron_name,
+                    'date': section['date'].iloc[0],
+                    'start_time_epoch': int(start_time.timestamp()),
+                    'end_time_epoch': int(end_time.timestamp()),
+                    'section_drain_slope_per_min': slope_per_minute,
+                    'section_drain_duration_minutes': section_duration_minutes
+                })
+
+    print("Finished processing individual draining sections.")
+
+    # --- Step 5: Create and display the final DataFrame ---
+    sections_df = pd.DataFrame(all_section_results)
+
+    print("\n--- Daily Averages of Individual Drain Slopes ---")
+    pd.set_option('display.max_rows', None)
+    print(sections_df)
+    
+    return sections_df

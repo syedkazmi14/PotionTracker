@@ -58,16 +58,63 @@ export function ForecastSchedule() {
     }))
   }, [forecasts, selectedCauldron])
 
-  // Prepare courier requirements data
+  // Prepare courier requirements data with future dates
   const courierData = useMemo(() => {
-    if (!schedule) return []
+    const data: Array<{ date: string; couriers: number }> = []
     
-    // Group by date (for future dates if we have them)
-    return [{
-      date: schedule.date,
-      couriers: schedule.couriers_needed,
-    }]
-  }, [schedule])
+    // Add today's schedule
+    if (schedule) {
+      data.push({
+        date: schedule.date,
+        couriers: schedule.couriers_needed,
+      })
+    }
+    
+    // Calculate future dates (next 7 days) based on forecasts
+    if (forecasts.length > 0 && cauldronsInfo.length > 0) {
+      const today = DateTime.now()
+      
+      for (let dayOffset = 1; dayOffset <= 7; dayOffset++) {
+        const futureDate = today.plus({ days: dayOffset })
+        const dateStr = futureDate.toFormat('yyyy-MM-dd')
+        
+        // Calculate how many cauldrons will need pickups on this date
+        // A cauldron needs a pickup if it will reach 100% before or on this date
+        let couriersNeeded = 0
+        const cauldronsNeedingPickup: string[] = []
+        
+        forecasts.forEach(forecast => {
+          if (!forecast.time_to_100_percent) return
+          
+          const overflowTime = DateTime.fromISO(forecast.time_to_100_percent)
+          const futureDateEnd = futureDate.endOf('day')
+          
+          // If overflow happens before or on this date, it needs a pickup
+          if (overflowTime <= futureDateEnd) {
+            // Check if this cauldron hasn't already been counted (in case multiple forecasts)
+            if (!cauldronsNeedingPickup.includes(forecast.cauldron_id)) {
+              cauldronsNeedingPickup.push(forecast.cauldron_id)
+            }
+          }
+        })
+        
+        // Estimate couriers needed based on number of cauldrons needing pickups
+        // Assume each courier can handle ~3-5 cauldrons (rough estimate)
+        // This is a simplified calculation - in reality it would use route optimization
+        if (cauldronsNeedingPickup.length > 0) {
+          // Rough estimate: 1 courier per 4 cauldrons, minimum 1
+          couriersNeeded = Math.max(1, Math.ceil(cauldronsNeedingPickup.length / 4))
+        }
+        
+        data.push({
+          date: dateStr,
+          couriers: couriersNeeded,
+        })
+      }
+    }
+    
+    return data
+  }, [schedule, forecasts, cauldronsInfo])
 
   // Prepare route visualization data
   const routeMarkers = useMemo(() => {
@@ -78,6 +125,7 @@ export function ForecastSchedule() {
       status: string
       name: string
       level: number
+      fillPercent?: number
     }> = []
 
     // Add market marker
@@ -89,21 +137,32 @@ export function ForecastSchedule() {
         status: 'market',
         name: market.name,
         level: 0,
+        fillPercent: 0,
       })
     }
 
-    // Add cauldron markers
+    // Add cauldron markers with color coding based on fill percentage
     cauldronsInfo.forEach(cauldron => {
       const forecast = forecasts.find(f => f.cauldron_id === cauldron.id)
+      const fillPercent = forecast?.current_percentage || 0
       const isAtRisk = forecast?.at_risk_12h || false
+      
+      // Determine status based on fill percentage
+      let status = 'online'
+      if (fillPercent >= 80) {
+        status = 'error'
+      } else if (fillPercent >= 30) {
+        status = 'warning'
+      }
       
       markers.push({
         id: cauldron.id,
         latitude: cauldron.latitude,
         longitude: cauldron.longitude,
-        status: isAtRisk ? 'error' : 'online',
+        status: status,
         name: cauldron.name,
-        level: forecast?.current_percentage || 0,
+        level: forecast?.current_level || 0,
+        fillPercent: fillPercent,
       })
     })
 
@@ -299,9 +358,20 @@ export function ForecastSchedule() {
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={courierData}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="date" />
+                  <XAxis 
+                    dataKey="date" 
+                    tickFormatter={(value) => {
+                      const date = DateTime.fromISO(value)
+                      return date.toFormat('MMM dd')
+                    }}
+                  />
                   <YAxis />
-                  <Tooltip />
+                  <Tooltip 
+                    labelFormatter={(value) => {
+                      const date = DateTime.fromISO(value)
+                      return date.toFormat('MMM dd, yyyy')
+                    }}
+                  />
                   <Bar dataKey="couriers" fill="#10b981" name="Couriers Needed" />
                 </BarChart>
               </ResponsiveContainer>
@@ -371,7 +441,8 @@ export function ForecastSchedule() {
         <CardContent className="p-0">
           <MapView
             markers={routeMarkers}
-            route={routeLines[0]} // Show first route, could be enhanced to show all
+            market={market || undefined}
+            routes={routeLines}
             className="h-[500px]"
           />
         </CardContent>
@@ -390,7 +461,7 @@ export function ForecastSchedule() {
                   <th className="text-left p-2 text-gray-900">Cauldron</th>
                   <th className="text-left p-2 text-gray-900">Current Level</th>
                   <th className="text-left p-2 text-gray-900">Brew Rate (L/h)</th>
-                  <th className="text-left p-2 text-gray-900">Time to 90%</th>
+                  <th className="text-left p-2 text-gray-900">Time to 80%</th>
                   <th className="text-left p-2 text-gray-900">Time to 100%</th>
                   <th className="text-left p-2 text-gray-900">Status</th>
                 </tr>
@@ -408,9 +479,23 @@ export function ForecastSchedule() {
                       </td>
                       <td className="p-2 text-gray-900">{forecast.brew_rate_liters_per_hour.toFixed(2)}</td>
                       <td className="p-2 text-gray-900">
-                        {forecast.time_to_90_percent 
-                          ? DateTime.fromISO(forecast.time_to_90_percent).toFormat('MMM dd, HH:mm')
-                          : 'N/A'}
+                        {forecast.time_to_80_percent 
+                          ? (() => {
+                              try {
+                                const timeTo80 = DateTime.fromISO(forecast.time_to_80_percent)
+                                const now = DateTime.now()
+                                // If time is in the past or very close to now (within 1 hour), it's already at 80%
+                                if (timeTo80 <= now.plus({ hours: 1 })) {
+                                  return 'Already at 80%'
+                                }
+                                return timeTo80.toFormat('MMM dd, HH:mm')
+                              } catch (e) {
+                                return 'Invalid date'
+                              }
+                            })()
+                          : forecast.brew_rate_liters_per_hour > 0 
+                            ? (forecast.current_percentage >= 80 ? 'Already at 80%' : 'N/A')
+                            : 'N/A (No brew rate)'}
                       </td>
                       <td className="p-2 text-gray-900">
                         {forecast.time_to_100_percent 
@@ -432,6 +517,7 @@ export function ForecastSchedule() {
           </div>
         </CardContent>
       </Card>
+
     </div>
   )
 }

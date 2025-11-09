@@ -264,11 +264,23 @@ export function MapView({
     }
 
     // Draw single route if provided (as dotted line for witch view)
+    // This must be drawn after network edges to ensure proper layering
     if (route && route.length > 1) {
       const routeCoordinates = route.map(point => [point.longitude, point.latitude])
+      // Always add route as dotted line for witch view
       addRoute('route', routeCoordinates, '#10b981', 3, true)
+      // Ensure route is tracked in ref
       if (!routeLayerRef.current.includes('route')) {
         routeLayerRef.current.push('route')
+      }
+    } else if (route && route.length <= 1) {
+      // Remove route if it exists but route data is invalid (not enough points)
+      if (map.current && map.current.getLayer('route')) {
+        if (map.current.getSource('route')) {
+          map.current.removeLayer('route')
+          map.current.removeSource('route')
+        }
+        routeLayerRef.current = routeLayerRef.current.filter(id => id !== 'route')
       }
     }
 

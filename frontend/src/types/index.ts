@@ -35,6 +35,29 @@ export const TicketSchema = z.object({
   updatedAt: z.string(),
 })
 
+// EOG API Ticket Types
+export type TransportTicket = {
+  ticket_id: string
+  cauldron_id: string
+  amount_collected: number
+  courier_id: string
+  date: string
+}
+
+export type TicketMetadata = {
+  total_tickets: number
+  suspicious_tickets: number
+  date_range: {
+    start: string
+    end: string
+  }
+}
+
+export type TicketsResponse = {
+  metadata: TicketMetadata
+  transport_tickets: TransportTicket[]
+}
+
 export const DiscrepancyDataPointSchema = z.object({
   date: z.string(),
   descrepency: z.number(),
@@ -46,4 +69,91 @@ export type Anomaly = z.infer<typeof AnomalySchema>
 export type Ticket = z.infer<typeof TicketSchema>
 export type DiscrepancyDataPoint = z.infer<typeof DiscrepancyDataPointSchema>
 export type DiscrepancyData = Record<string, DiscrepancyDataPoint[]>
+
+// API Response Types
+export type CauldronInfo = {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  max_volume: number
+}
+
+export type CauldronLevelsData = {
+  timestamp: string
+  cauldron_levels: Record<string, number>
+}
+
+export type TrendLineDataPoint = {
+  time: string
+  [cauldronId: string]: string | number | null
+}
+
+// Forecast Types
+export type ForecastPoint = {
+  timestamp: string
+  level: number
+  percentage: number
+}
+
+export type Forecast = {
+  cauldron_id: string
+  current_level: number
+  max_volume: number
+  current_percentage: number
+  brew_rate_liters_per_hour: number
+  forecast_points: ForecastPoint[]
+  time_to_90_percent: string | null
+  time_to_100_percent: string | null
+  at_risk_12h: boolean
+}
+
+// Schedule Types
+export type CourierAssignment = {
+  courier: string
+  courier_id: string
+  route: string[]
+  cauldrons_visited: string[]
+  start: string
+  end: string
+  travel_time_minutes: number
+  total_time_minutes: number
+  volume_collected: number
+}
+
+export type DailySchedule = {
+  date: string
+  couriers_needed: number
+  assignments: CourierAssignment[]
+  unassigned_pickups?: number
+}
+
+// Network Types
+export type NetworkEdge = {
+  from: string
+  to: string
+  travel_time_minutes: number
+}
+
+export type Network = {
+  edges: NetworkEdge[]
+  description?: string
+}
+
+// Courier Types
+export type Courier = {
+  courier_id?: string
+  id?: string
+  name: string
+  max_carrying_capacity: number
+}
+
+// Market Types
+export type Market = {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  description?: string
+}
 

@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, abort, request
 from slope import calculate_daily_drain_rates, calculate_daily_slopes
 from utils import get_cauldron_data
+from utils.forecasting import get_forecast
+from utils.scheduling import create_daily_schedule, fetch_cauldrons, fetch_couriers, fetch_market, fetch_network_data
 from ticket_tracker import verify_cauldrons
 from tcp_server import tcp_server
 from pathlib import Path
@@ -13,6 +15,8 @@ from collections import deque
 import time
 import socket
 import struct 
+import requests
+
 # ===================================================================
 # THREAD-SAFE GLOBAL DATA STORES & LOCKS
 # ===================================================================
@@ -30,6 +34,15 @@ df_lock = threading.Lock()
 data_db = None
 fill_rate_df = None
 drain_rate_df = None
+
+# --- For Cached Static Data ---
+static_data_lock = threading.Lock()
+cached_cauldrons = None
+cached_couriers = None
+cached_market = None
+cached_network = None
+cache_timestamp = None
+CACHE_DURATION_SECONDS = 3600  # Cache for 1 hour
 
 # ===================================================================
 # BACKGROUND WORKER THREADS
@@ -134,7 +147,6 @@ def initial_load():
 # FLASK APPLICATION SETUP
 # ===================================================================
 app = Flask(__name__)
-<<<<<<< Updated upstream
 
 # Enable CORS for all routes
 @app.after_request
@@ -175,18 +187,11 @@ else:
     data_db=get_cauldron_data()
     data_db.to_csv(DATA_DB,header=True, index=False)
 
-=======
 initial_load()
 # --- Routes ---
->>>>>>> Stashed changes
 @app.route('/')
 def index():
     return "Hello, World!"
-
-@app.route('/api/live_data')
-def get_live_data():
-    with tcp_data_lock:
-        return jsonify(list(tcp_data))
 
 @app.route("/api/drain_rate/<cauldron_id>/<date>")
 def get_drain_rate_section_route(cauldron_id, date):
@@ -219,7 +224,6 @@ def amounts():
 
 @app.route("/api/get_descrepencies/")
 def get_descrepencies():
-<<<<<<< Updated upstream
     return verify_cauldrons()
 
 @app.route("/api/live_data")
@@ -249,8 +253,132 @@ def update_live_data():
         return jsonify(tcp_server.latest_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
-=======
-    # Assuming verify_cauldrons uses the global dataframes, it should also be locked
-    with df_lock:
-        return verify_cauldrons()
->>>>>>> Stashed changes
+
+@app.route("/api/cauldrons-info")
+@app.route("/api/proxy/cauldrons-info")
+def get_cauldrons_info():
+    """Proxy endpoint to fetch cauldrons info from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Information/cauldrons')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/cauldron-levels-data")
+@app.route("/api/proxy/cauldron-levels")
+def get_cauldron_levels_data():
+    """Proxy endpoint to fetch cauldron levels data from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Data')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
+# ===================================================================
+# FORECASTING AND SCHEDULING ENDPOINTS
+# ===================================================================
+
+def get_cached_static_data():
+    """Get or refresh cached static data."""
+    global cached_cauldrons, cached_couriers, cached_market, cached_network, cache_timestamp
+    
+    with static_data_lock:
+        current_time = time.time()
+        
+        # Check if cache is valid
+        if (cache_timestamp is None or 
+            (current_time - cache_timestamp) > CACHE_DURATION_SECONDS or
+            cached_cauldrons is None):
+            
+            print("[Cache] Refreshing static data cache...")
+            try:
+                cached_cauldrons = fetch_cauldrons()
+                cached_couriers = fetch_couriers()
+                cached_market = fetch_market()
+                cached_network = fetch_network_data()
+                cache_timestamp = current_time
+                print("[Cache] Static data cache refreshed.")
+            except Exception as e:
+                print(f"[Cache] Error refreshing cache: {e}")
+        
+        return cached_cauldrons, cached_couriers, cached_market, cached_network
+
+@app.route("/api/Forecast")
+def get_forecast_endpoint():
+    """Get forecast data for all cauldrons."""
+    try:
+        cauldrons, _, _, _ = get_cached_static_data()
+        if not cauldrons:
+            return jsonify({'error': 'No cauldron data available'}), 503
+        
+        # Convert to dict format expected by forecasting
+        cauldron_info = {c['id']: c for c in cauldrons}
+        
+        forecasts = get_forecast(cauldron_info)
+        return jsonify(forecasts)
+    except Exception as e:
+        print(f"Error in forecast endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/Schedule/daily")
+def get_daily_schedule():
+    """Get daily schedule for couriers."""
+    try:
+        date = request.args.get('date')  # Optional date parameter
+        schedule = create_daily_schedule(date)
+        return jsonify(schedule)
+    except Exception as e:
+        print(f"Error in schedule endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/couriers")
+def get_couriers_endpoint():
+    """Get courier information."""
+    try:
+        _, couriers, _, _ = get_cached_static_data()
+        if couriers is None:
+            return jsonify({'error': 'No courier data available'}), 503
+        return jsonify(couriers)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/market")
+def get_market_endpoint():
+    """Get market information."""
+    try:
+        _, _, market, _ = get_cached_static_data()
+        if market is None:
+            return jsonify({'error': 'No market data available'}), 503
+        return jsonify(market)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/network")
+def get_network_endpoint():
+    """Get network information."""
+    try:
+        _, _, _, network = get_cached_static_data()
+        if network is None:
+            return jsonify({'error': 'No network data available'}), 503
+        return jsonify(network)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/tickets")
+@app.route("/api/proxy/tickets")
+def get_tickets_endpoint():
+    """Proxy endpoint to fetch tickets from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Tickets')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
+# Test route to verify new endpoints are loaded
+@app.route("/api/test-forecast")
+def test_forecast():
+    """Test route to verify forecast module is loaded."""
+    return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})

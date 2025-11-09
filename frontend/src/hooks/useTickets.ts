@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { api } from '@/lib/api'
-import { Ticket } from '@/types'
+import { TransportTicket } from '@/types'
 
 export function useTickets(cauldronId?: string) {
-  return useQuery<Ticket[]>({
+  return useQuery<TransportTicket[]>({
     queryKey: ['tickets', cauldronId],
     queryFn: () => api.getTickets(cauldronId),
+    refetchInterval: 60000, // Refetch every 60 seconds
   })
 }
 

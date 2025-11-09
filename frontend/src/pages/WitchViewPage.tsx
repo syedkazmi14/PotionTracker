@@ -1,13 +1,14 @@
 import { useState, useMemo } from 'react'
-import { useCauldrons } from '@/hooks/useCauldrons'
+import { useLiveData, LiveCauldron } from '@/hooks/useLiveData'
+import { useForecast } from '@/hooks/useForecast'
 import { MapView } from '@/components/MapView'
+import { ForecastSchedule } from '@/components/ForecastSchedule'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Wand2, MapPin, Plus, X } from 'lucide-react'
+import { Wand2, MapPin, Plus, X, Route, BarChart3, AlertTriangle, Clock } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
-import { Cauldron } from '@/types'
 import { DateTime } from 'luxon'
 
 // Calculate distance between two points using Haversine formula
@@ -24,20 +25,27 @@ function calculateDistance(lat1: number, lon1: number, lat2: number, lon2: numbe
 }
 
 // Optimize route using nearest neighbor algorithm
-function optimizeRoute(cauldrons: Cauldron[]): Cauldron[] {
+function optimizeRoute(cauldrons: LiveCauldron[], market: { latitude: number; longitude: number } | null): LiveCauldron[] {
   if (cauldrons.length === 0) return []
   
   // Filter out offline cauldrons for route optimization
   const activeCauldrons = cauldrons.filter(c => c.status !== 'offline')
   if (activeCauldrons.length === 0) return cauldrons
 
-  // Start from the first cauldron (or could be user's current location)
-  const route: Cauldron[] = []
+  // Start from market if available, otherwise first cauldron
+  const route: LiveCauldron[] = []
   const unvisited = [...activeCauldrons]
   
-  // Start with the first cauldron
-  let current = unvisited.shift()!
-  route.push(current)
+  let current: { latitude: number; longitude: number } | null = null
+  if (market) {
+    current = { latitude: market.latitude, longitude: market.longitude }
+  } else if (unvisited.length > 0) {
+    const first = unvisited.shift()!
+    current = { latitude: first.latitude, longitude: first.longitude }
+    route.push(first)
+  }
+
+  if (!current) return []
 
   // Build route using nearest neighbor
   while (unvisited.length > 0) {
@@ -64,7 +72,7 @@ function optimizeRoute(cauldrons: Cauldron[]): Cauldron[] {
 
     route.push(nearest)
     unvisited.splice(unvisited.indexOf(nearest), 1)
-    current = nearest
+    current = { latitude: nearest.latitude, longitude: nearest.longitude }
   }
 
   return route
@@ -76,14 +84,70 @@ interface TicketFormData {
 }
 
 export function WitchViewPage() {
-  const { data: cauldrons = [], isLoading } = useCauldrons()
+  const { data: liveData, isLoading } = useLiveData()
+  const { data: forecasts = [] } = useForecast()
   const queryClient = useQueryClient()
   const [selectedStopIndex, setSelectedStopIndex] = useState<number | null>(null)
   const [ticketForm, setTicketForm] = useState<TicketFormData>({ title: '', description: '' })
   const [showTicketForm, setShowTicketForm] = useState(false)
+  const [activeTab, setActiveTab] = useState<'route' | 'forecast'>('route')
 
-  // Optimize route
-  const optimizedRoute = useMemo(() => optimizeRoute(cauldrons), [cauldrons])
+  const { cauldrons, market, network } = liveData
+
+  // Get suggested pickups (cauldrons that will exceed 90% soonest)
+  const suggestedPickups = useMemo(() => {
+    return cauldrons
+      .map(cauldron => {
+        const forecast = forecasts.find(f => f.cauldron_id === cauldron.id)
+        const timeTo90 = forecast?.time_to_90_percent
+        const travelTime = market && network
+          ? network.edges.find(e => 
+              (e.from === 'market' && e.to === cauldron.id) || 
+              (e.to === 'market' && e.from === cauldron.id)
+            )?.travel_time_minutes || 0
+          : 0
+
+        return {
+          cauldron,
+          forecast,
+          timeTo90: timeTo90 ? DateTime.fromISO(timeTo90) : null,
+          travelTime,
+          urgency: timeTo90 
+            ? DateTime.fromISO(timeTo90).diffNow('hours').hours 
+            : Infinity,
+        }
+      })
+      .filter(item => item.forecast && item.cauldron.fillPercent >= 80)
+      .sort((a, b) => a.urgency - b.urgency)
+      .slice(0, 5) // Top 5 most urgent
+  }, [cauldrons, forecasts, market, network])
+
+  // Optimize route for urgent cauldrons
+  const urgentCauldrons = useMemo(() => {
+    return suggestedPickups.map(item => item.cauldron)
+  }, [suggestedPickups])
+
+  const optimizedRoute = useMemo(() => {
+    if (urgentCauldrons.length > 0) {
+      return optimizeRoute(urgentCauldrons, market)
+    }
+    return optimizeRoute(cauldrons.filter(c => c.fillPercent >= 80), market)
+  }, [urgentCauldrons, cauldrons, market])
+
+  // Create node coordinates map for network edges
+  const nodeCoordinates = useMemo(() => {
+    const coords = new Map<string, { latitude: number; longitude: number }>()
+    
+    if (market) {
+      coords.set('market', { latitude: market.latitude, longitude: market.longitude })
+    }
+    
+    cauldrons.forEach(cauldron => {
+      coords.set(cauldron.id, { latitude: cauldron.latitude, longitude: cauldron.longitude })
+    })
+    
+    return coords
+  }, [cauldrons, market])
 
   // Create markers for map
   const markers = optimizedRoute.map((cauldron, index) => ({
@@ -92,7 +156,9 @@ export function WitchViewPage() {
     longitude: cauldron.longitude,
     status: cauldron.status,
     name: `${index + 1}. ${cauldron.name}`,
-    level: cauldron.level,
+    level: cauldron.currentLevel,
+    fillPercent: cauldron.fillPercent,
+    lastUpdated: cauldron.lastUpdated,
   }))
 
   // Create route for map
@@ -134,7 +200,7 @@ export function WitchViewPage() {
   }
 
   if (isLoading) {
-    return <div className="text-center py-12 text-gray-900">Loading route...</div>
+    return <div className="text-center py-12 text-gray-900">Loading live data...</div>
   }
 
   return (
@@ -146,6 +212,39 @@ export function WitchViewPage() {
         </h2>
         <p className="text-gray-700">Optimized route for cauldron maintenance</p>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-4">
+          <button
+            onClick={() => setActiveTab('route')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'route'
+                ? 'border-green-600 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Route className="h-4 w-4 inline mr-2" />
+            Route View
+          </button>
+          <button
+            onClick={() => setActiveTab('forecast')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'forecast'
+                ? 'border-green-600 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 inline mr-2" />
+            Forecast & Schedule
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'forecast' ? (
+        <ForecastSchedule />
+      ) : (
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Route List */}
@@ -174,16 +273,23 @@ export function WitchViewPage() {
                         <div>
                           <h3 className="font-semibold text-green-900">{cauldron.name}</h3>
                           <p className="text-sm text-green-700">
-                            Level: {cauldron.level}% | {cauldron.potions || 0} potions
+                            Fill: {cauldron.fillPercent.toFixed(1)}% | Level: {cauldron.currentLevel.toFixed(1)}L
                           </p>
+                          {cauldron.lastUpdated && (
+                            <p className="text-xs text-green-600 mt-1">
+                              Updated: {DateTime.fromISO(cauldron.lastUpdated).toLocaleString(DateTime.DATETIME_SHORT)}
+                            </p>
+                          )}
                           <Badge
                             variant="outline"
                             className={`mt-1 ${
-                              cauldron.level < 30
+                              cauldron.statusColor === 'green'
                                 ? 'bg-green-500/20 text-green-700 border-green-500/50'
-                                : cauldron.level < 80
+                                : cauldron.statusColor === 'yellow'
                                 ? 'bg-yellow-500/20 text-yellow-700 border-yellow-500/50'
-                                : 'bg-red-500/20 text-red-700 border-red-500/50'
+                                : cauldron.statusColor === 'red'
+                                ? 'bg-red-500/20 text-red-700 border-red-500/50'
+                                : 'bg-gray-500/20 text-gray-700 border-gray-500/50'
                             }`}
                           >
                             {cauldron.status}
@@ -196,6 +302,60 @@ export function WitchViewPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Suggested Pickups */}
+          {suggestedPickups.length > 0 && (
+            <Card className="border-yellow-200 bg-yellow-50/50">
+              <CardHeader>
+                <CardTitle className="text-yellow-800 flex items-center gap-2">
+                  <AlertTriangle className="h-5 w-5" />
+                  Suggested Pickups
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {suggestedPickups.map((item, idx) => (
+                    <div
+                      key={item.cauldron.id}
+                      className="p-3 rounded-lg border bg-white border-yellow-200"
+                    >
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="font-semibold text-yellow-900">{item.cauldron.name}</h3>
+                          <p className="text-sm text-yellow-700">
+                            Fill: {item.cauldron.fillPercent.toFixed(1)}%
+                          </p>
+                          {item.timeTo90 && (
+                            <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Time to 90%: {item.timeTo90.toRelative()}
+                            </p>
+                          )}
+                          {item.travelTime > 0 && (
+                            <p className="text-xs text-yellow-600">
+                              Travel from market: {item.travelTime} min
+                            </p>
+                          )}
+                        </div>
+                        <Badge
+                          variant="outline"
+                          className={
+                            item.urgency < 2
+                              ? 'bg-red-500/20 text-red-700 border-red-500/50'
+                              : item.urgency < 6
+                              ? 'bg-yellow-500/20 text-yellow-700 border-yellow-500/50'
+                              : 'bg-green-500/20 text-green-700 border-green-500/50'
+                          }
+                        >
+                          {item.urgency < 2 ? 'Critical' : item.urgency < 6 ? 'Urgent' : 'Soon'}
+                        </Badge>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Ticket Form */}
           {showTicketForm && selectedStopIndex !== null && (
@@ -261,6 +421,9 @@ export function WitchViewPage() {
             <CardContent className="p-0">
               <MapView
                 markers={markers}
+                market={market}
+                networkEdges={network?.edges || []}
+                nodeCoordinates={nodeCoordinates}
                 route={route}
                 className="h-[600px]"
               />
@@ -268,6 +431,7 @@ export function WitchViewPage() {
           </Card>
         </div>
       </div>
+      )}
     </div>
   )
 }

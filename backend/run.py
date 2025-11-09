@@ -18,16 +18,16 @@ if __name__ == '__main__':
     signal.signal(signal.SIGTERM, graceful_shutdown)
 
     # Perform the initial data load before starting any threads.
-    initial_load() # Uncomment this when your get_cauldron_data() function is ready.
+    #initial_load() # Uncomment this when your get_cauldron_data() function is ready.
 
     print("[Main Thread] Starting background threads...", flush=True)
     
     # --- Create worker threads ---
     # These are NON-DAEMONIC because we want to wait for them to finish cleanly.
     tcp_thread = threading.Thread(target=start_tcp_server, args=(stop_event,))
-    update_thread = threading.Thread(target=data_update_worker, args=(stop_event,))
+    #update_thread = threading.Thread(target=data_update_worker, args=(stop_event,))
     
-    worker_threads = [tcp_thread, update_thread]
+    worker_threads = [tcp_thread]#, update_thread]
 
     # --- Create the server thread ---
     # This thread IS DAEMONIC. This means it will be abruptly terminated when the

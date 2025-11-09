@@ -42,55 +42,107 @@ cached_market = None
 cached_network = None
 cache_timestamp = None
 CACHE_DURATION_SECONDS = 3600  # Cache for 1 hour
-live_db = None
+# Corrected Initialization
+rows = []
+# Use a real datetime object for initialization
+start_time = datetime.datetime.now()
+for i in range(1,13):
+    rows.append({"cauldron" : f"Cauldron: {i}", "amount" : 0, "time" : start_time, "claimed" : 0, "steal": 0 }) # Added "steal" for consistency
+live_db =  pd.DataFrame(rows)
+
+current_cauldron = 1
+max_cap = 100
 # ===================================================================
 # BACKGROUND WORKER THREADS
 # ===================================================================
-
+live_rates = .2
 def client_handler_thread(connection, client_address, stop_event):
     """
     This function runs in its own thread and handles communication
     with a single connected client.
     """
+    global live_db
+    global max_cap
+    global live_rates
+    global current_cauldron 
+    # Each thread should manage its own state.
+    # Initialize with the global default.
+    local_current_cauldron_str = f"Cauldron: {current_cauldron}"
+
     print(f"[TCP Handler: {client_address}] Thread started.", flush=True)
     try:
-        # Use a context manager to ensure the connection is always closed
         with connection:
-            connection.settimeout(1.0) # Make recv non-blocking
+            connection.settimeout(1.0)
 
             while not stop_event.is_set():
                 try:
                     data = connection.recv(20)
                     if not data:
                         print(f"[TCP Handler: {client_address}] Connection closed by client.", flush=True)
-                        break # Exit the loop if client disconnects
+                        break
                     
+                    local_current_cauldron_str = f"Cauldron: {current_cauldron}"
                     if len(data) == 20:
-                        header, pot1, pot2, bv_int, unused = struct.unpack('<IIIII', data)
-                        if header == 1:
-                            pass
-                        elif header ==2:
-                            pass
-                        elif header == 3:
-                            pass
-                        elif header ==4:
-                            pass
-                        print(f"[TCP Handler: {client_address}] Received: header={header} pot1={pot1}, pot2={pot2}", flush=True)
-                        # Here you would process the data, e.g., update the live_db
-                        # with df_lock:
-                        #    # update logic here...
+                        header, pot1, pot2, pot3, pot4 = struct.unpack('<IIIII', data)
+                        
+                        # Acquire the lock BEFORE any read or write operation on the shared DataFrame
+                        with df_lock:
+                            if header == 1:
+                                cands = live_db[live_db["cauldron"] == local_current_cauldron_str]
+                                
+                                if not cands.empty:
+                                    # CORRECTED: Use .loc to select by index LABEL
+                                    amount = cands.loc[cands["time"].idxmax()]["amount"].item()
+                                    to_send = f"\tEOG Witch Watchers\n\t{local_current_cauldron_str} \n\tAmount: {amount:.02f}\r"
+                                    connection.send(to_send.encode())
+                                else:
+                                    print(f"[Warning] No data found for {local_current_cauldron_str}")
+
+                            elif header == 2:
+                                local_current_cauldron_str = f"Cauldron: {pot1}"
+                                cands = live_db[live_db["cauldron"] == local_current_cauldron_str]
+                                current_cauldron = pot1 
+                                if not cands.empty:
+                                    # CORRECTED: Use .loc here as well
+                                    amount_value = cands.loc[cands["time"].idxmax()]["amount"].item()
+                                    amount = int((amount_value / max_cap) / 0.10)
+                                    i = struct.pack('i', amount)
+                                    connection.send(i)
+                                else:
+                                    print(f"[Warning] No data found for {local_current_cauldron_str}")
+
+                            elif header == 3:
+                                selected_cal = f"Cauldron: {pot1}"
+                                time = datetime.datetime.now()
+
+                                cands = live_db[live_db["cauldron"] == selected_cal]
+                                
+                                if not cands.empty:
+                                    # CORRECTED: Use .loc for the final case
+                                    max_row = cands.loc[cands["time"].idxmax()]
+                                    time_passed = time - max_row["time"]
+                                    
+                                    time_passed_seconds = time_passed.total_seconds() 
+                                    
+                                    amount = time_passed_seconds * live_rates + max_row["amount"] - (time_passed_seconds * live_rates + max_row["amount"]) * .1 * pot2 
+                                    row = pd.DataFrame([{"cauldron" : selected_cal, "amount" : amount, "claimed" : pot3, "steal" : pot4,  "time" : time}])
+                                    
+                                    # This write operation is now thread-safe
+                                    live_db = pd.concat([live_db, row], ignore_index=True)
+                                    print(live_db)
+                                else:
+                                    print(f"[Warning] No initial data to update for {selected_cal}")
                     else:
                         print(f"[TCP Handler: {client_address}] Received incomplete data packet.", flush=True)
 
                 except socket.timeout:
-                    # It's normal for recv to time out; this allows us to check the stop_event
                     continue
                 except (ConnectionResetError, BrokenPipeError):
                     print(f"[TCP Handler: {client_address}] Connection was forcibly closed.", flush=True)
-                    break # Exit the loop
+                    break
                 except Exception as e:
-                    print(f"[TCP Handler: {client_address}] Error during recv: {e}", flush=True)
-                    break # Exit the loop on other errors
+                    print(f"[TCP Handler: {client_address}] Error during processing: {e}", flush=True)
+                    break
     
     finally:
         print(f"[TCP Handler: {client_address}] Thread finished.", flush=True)
@@ -433,19 +485,6 @@ def test_forecast():
     """Test route to verify forecast module is loaded."""
     return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})
 
-<<<<<<< HEAD
-# ===================================================================
-# SCRIPT EXECUTION
-# ===================================================================
-
-def background_task():
-    """A simple function that prints a message every 5 seconds."""
-    # Add flush=True here
-    print("[Background Thread] The test background task is starting.", flush=True)
-    while True:
-        # And most importantly, add it here
-        print(f"[Background Thread] Hello from the background! The time is {time.ctime()}", flush=True)
-        time.sleep(5)
 
 if __name__ == '__main__':
     

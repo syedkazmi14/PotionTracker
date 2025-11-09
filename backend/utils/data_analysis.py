@@ -22,7 +22,7 @@ def get_cauldron_data():
                 new_data.append(new_row)
             df = pd.DataFrame(new_data)
         
-            df.to_csv("data.csv")
+            df.to_csv("data.csv",header=True, index=False)
             return df
     else:
         df = pd.read_csv("data.csv")

@@ -10,7 +10,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Forecast, DailySchedule, CauldronInfo, Market, Network } from '@/types'
 import { DateTime } from 'luxon'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts'
 import { AlertTriangle, Clock, Users, MapPin } from 'lucide-react'
 
 export function ForecastSchedule() {
@@ -193,14 +193,43 @@ export function ForecastSchedule() {
 
   // Prepare route polylines from schedule
   const routeLines = useMemo(() => {
-    if (!schedule || !schedule.assignments.length || !cauldronsInfo.length || !market) return []
+    if (!schedule || !schedule.assignments.length || !cauldronsInfo.length || !market) {
+      console.log('[ForecastSchedule] Missing data for routes:', {
+        hasSchedule: !!schedule,
+        assignmentsCount: schedule?.assignments?.length || 0,
+        cauldronsInfoCount: cauldronsInfo.length,
+        hasMarket: !!market
+      })
+      return []
+    }
 
     const routes: Array<Array<{ latitude: number; longitude: number }>> = []
 
-    schedule.assignments.forEach(assignment => {
+    schedule.assignments.forEach((assignment, idx) => {
       const routePoints: Array<{ latitude: number; longitude: number }> = []
       
-      assignment.route.forEach(nodeId => {
+      console.log(`[ForecastSchedule] Processing assignment ${idx} for ${assignment.courier}:`, {
+        route: assignment.route,
+        routeLength: assignment.route?.length || 0,
+        cauldrons_visited: assignment.cauldrons_visited,
+        allCauldronIds: cauldronsInfo.map(c => c.id)
+      })
+      
+      // Build route from assignment.route, but fallback to cauldrons_visited if route is incomplete
+      const routeNodes = assignment.route && assignment.route.length > 1 
+        ? assignment.route 
+        : (() => {
+            // Fallback: build route from cauldrons_visited
+            const fallbackRoute = ['market']
+            if (assignment.cauldrons_visited && assignment.cauldrons_visited.length > 0) {
+              fallbackRoute.push(...assignment.cauldrons_visited)
+            }
+            fallbackRoute.push('market')
+            console.log(`[ForecastSchedule] Using fallback route for ${assignment.courier}:`, fallbackRoute)
+            return fallbackRoute
+          })()
+      
+      routeNodes.forEach((nodeId: string) => {
         if (nodeId === 'market' && market) {
           routePoints.push({
             latitude: market.latitude,
@@ -213,15 +242,25 @@ export function ForecastSchedule() {
               latitude: cauldron.latitude,
               longitude: cauldron.longitude,
             })
+          } else {
+            console.warn(`[ForecastSchedule] Cauldron not found for nodeId: ${nodeId}`, {
+              nodeId,
+              availableIds: cauldronsInfo.map(c => c.id).slice(0, 10)
+            })
           }
         }
       })
       
+      console.log(`[ForecastSchedule] Route points for ${assignment.courier}:`, routePoints)
+      
       if (routePoints.length > 1) {
         routes.push(routePoints)
+      } else {
+        console.warn(`[ForecastSchedule] Route for ${assignment.courier} has insufficient points:`, routePoints)
       }
     })
 
+    console.log('[ForecastSchedule] Final routes:', routes)
     return routes
   }, [schedule, cauldronsInfo, market])
 
@@ -546,6 +585,242 @@ export function ForecastSchedule() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Visualizations Section */}
+      <div className="space-y-6">
+        {/* Brew Rate Visualization */}
+        <Card className="bg-white text-gray-900">
+          <CardHeader>
+            <CardTitle className="text-gray-900">Brew Rate Comparison</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {forecasts.length > 0 ? (
+              (() => {
+                const chartData = forecasts.map(f => {
+                  const cauldron = cauldronsInfo.find(c => c.id === f.cauldron_id)
+                  return {
+                    name: cauldron?.name || f.cauldron_id,
+                    brewRate: f.brew_rate_liters_per_hour,
+                    currentPercent: f.current_percentage,
+                  }
+                }).sort((a, b) => b.brewRate - a.brewRate)
+                
+                return (
+                  <ResponsiveContainer width="100%" height={400}>
+                    <BarChart data={chartData}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis 
+                        dataKey="name" 
+                        angle={-45}
+                        textAnchor="end"
+                        height={100}
+                      />
+                      <YAxis label={{ value: 'Brew Rate (L/h)', angle: -90, position: 'insideLeft' }} />
+                      <Tooltip 
+                        formatter={(value: any) => [`${value.toFixed(2)} L/h`, 'Brew Rate']}
+                        labelStyle={{ color: '#000' }}
+                      />
+                      <Bar 
+                        dataKey="brewRate" 
+                        fill="#8b5cf6"
+                        radius={[8, 8, 0, 0]}
+                      >
+                        {chartData.map((entry, index) => {
+                          const percent = entry.currentPercent
+                          let color = '#8b5cf6' // default purple
+                          if (percent >= 80) color = '#ef4444' // red
+                          else if (percent >= 30) color = '#f59e0b' // yellow
+                          else color = '#10b981' // green
+                          return <Cell key={`cell-${index}`} fill={color} />
+                        })}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )
+              })()
+            ) : (
+              <div className="text-center py-12 text-gray-500">No forecast data available</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Forecast Timeline Visualization */}
+        <Card className="bg-white text-gray-900">
+          <CardHeader>
+            <CardTitle className="text-gray-900">Forecast Timeline</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {forecasts.length > 0 ? (
+              <div className="space-y-4">
+                {forecasts
+                  .filter(f => f.time_to_80_percent || f.time_to_100_percent)
+                  .sort((a, b) => {
+                    const timeA = a.time_to_80_percent ? DateTime.fromISO(a.time_to_80_percent).toMillis() : Infinity
+                    const timeB = b.time_to_80_percent ? DateTime.fromISO(b.time_to_80_percent).toMillis() : Infinity
+                    return timeA - timeB
+                  })
+                  .map(forecast => {
+                    const cauldron = cauldronsInfo.find(c => c.id === forecast.cauldron_id)
+                    const now = DateTime.now()
+                    const timeTo80 = forecast.time_to_80_percent ? DateTime.fromISO(forecast.time_to_80_percent) : null
+                    const timeTo100 = forecast.time_to_100_percent ? DateTime.fromISO(forecast.time_to_100_percent) : null
+                    
+                    // Calculate hours from now
+                    const hoursTo80 = timeTo80 ? Math.max(0, timeTo80.diff(now, 'hours').hours) : null
+                    const hoursTo100 = timeTo100 ? Math.max(0, timeTo100.diff(now, 'hours').hours) : null
+                    
+                    return (
+                      <div key={forecast.cauldron_id} className="border rounded-lg p-4 bg-gray-50">
+                        <div className="flex items-center justify-between mb-3">
+                          <h3 className="font-semibold text-gray-900">
+                            {cauldron?.name || forecast.cauldron_id}
+                          </h3>
+                          <Badge
+                            variant="outline"
+                            className={
+                              forecast.current_percentage >= 80
+                                ? 'bg-red-500/20 text-red-700 border-red-500/50'
+                                : forecast.current_percentage >= 30
+                                ? 'bg-yellow-500/20 text-yellow-700 border-yellow-500/50'
+                                : 'bg-green-500/20 text-green-700 border-green-500/50'
+                            }
+                          >
+                            {forecast.current_percentage.toFixed(1)}% Full
+                          </Badge>
+                        </div>
+                        
+                        {/* Timeline Bar */}
+                        <div className="relative h-16 bg-gray-200 rounded-lg overflow-hidden">
+                          {/* 80% Marker */}
+                          {hoursTo80 !== null && hoursTo80 < 48 && (
+                            <div
+                              className="absolute top-0 bottom-0 bg-yellow-400 border-r-2 border-yellow-600 flex items-center justify-center"
+                              style={{
+                                left: `${Math.min(100, (hoursTo80 / 48) * 100)}%`,
+                                width: '2px',
+                              }}
+                            >
+                              <div className="absolute -top-6 text-xs font-medium text-yellow-700 whitespace-nowrap">
+                                80%
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* 100% Marker */}
+                          {hoursTo100 !== null && hoursTo100 < 48 && (
+                            <div
+                              className="absolute top-0 bottom-0 bg-red-400 border-r-2 border-red-600 flex items-center justify-center"
+                              style={{
+                                left: `${Math.min(100, (hoursTo100 / 48) * 100)}%`,
+                                width: '2px',
+                              }}
+                            >
+                              <div className="absolute -top-6 text-xs font-medium text-red-700 whitespace-nowrap">
+                                100%
+                              </div>
+                            </div>
+                          )}
+                          
+                          {/* Current Position Indicator */}
+                          <div className="absolute top-0 bottom-0 left-0 w-1 bg-blue-600 z-10"></div>
+                          
+                          {/* Time Labels */}
+                          <div className="absolute bottom-0 left-0 right-0 flex justify-between text-xs text-gray-600 p-1">
+                            <span>Now</span>
+                            <span>+24h</span>
+                            <span>+48h</span>
+                          </div>
+                        </div>
+                        
+                        {/* Info Text */}
+                        <div className="mt-2 text-xs text-gray-600 space-y-1">
+                          {hoursTo80 !== null && hoursTo80 < 48 && (
+                            <p>
+                              <span className="font-medium">80% in:</span> {hoursTo80.toFixed(1)} hours 
+                              ({timeTo80?.toFormat('MMM dd, HH:mm')})
+                            </p>
+                          )}
+                          {hoursTo100 !== null && hoursTo100 < 48 && (
+                            <p>
+                              <span className="font-medium">100% in:</span> {hoursTo100.toFixed(1)} hours 
+                              ({timeTo100?.toFormat('MMM dd, HH:mm')})
+                            </p>
+                          )}
+                          <p>
+                            <span className="font-medium">Brew Rate:</span> {forecast.brew_rate_liters_per_hour.toFixed(2)} L/h
+                          </p>
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+            ) : (
+              <div className="text-center py-12 text-gray-500">No forecast timeline data available</div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Schedule Timeline Visualization */}
+        {schedule && schedule.assignments.length > 0 && (
+          <Card className="bg-white text-gray-900">
+            <CardHeader>
+              <CardTitle className="text-gray-900">Schedule Timeline</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {schedule.assignments.map((assignment, idx) => {
+                  const startTime = DateTime.fromISO(assignment.start)
+                  const endTime = DateTime.fromISO(assignment.end)
+                  const duration = endTime.diff(startTime, 'hours').hours
+                  
+                  return (
+                    <div key={idx} className="border rounded-lg p-4 bg-gray-50">
+                      <div className="flex items-center justify-between mb-3">
+                        <h3 className="font-semibold text-gray-900">{assignment.courier}</h3>
+                        <div className="flex gap-2">
+                          <Badge variant="outline" className="text-gray-900">
+                            {assignment.volume_collected.toFixed(1)} L
+                          </Badge>
+                          {assignment.distance_km !== undefined && (
+                            <Badge variant="outline" className="text-gray-900">
+                              {assignment.distance_km.toFixed(2)} km
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                      
+                      {/* Timeline Bar */}
+                      <div className="relative h-12 bg-gray-200 rounded-lg overflow-hidden mb-2">
+                        <div
+                          className="absolute top-0 bottom-0 bg-green-500 flex items-center justify-center text-white font-medium text-sm"
+                          style={{
+                            left: '0%',
+                            width: '100%',
+                          }}
+                        >
+                          {startTime.toFormat('HH:mm')} - {endTime.toFormat('HH:mm')} ({assignment.total_time_minutes} min)
+                        </div>
+                      </div>
+                      
+                      {/* Route Info */}
+                      <div className="text-xs text-gray-600">
+                        <p className="font-medium mb-1">Route:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {assignment.route.map((node, i) => (
+                            <span key={i} className="bg-white px-2 py-1 rounded border">
+                              {i + 1}. {node === 'market' ? 'Market' : (cauldronsInfo.find(c => c.id === node)?.name || node)}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
 
     </div>
   )

@@ -152,15 +152,26 @@ def optimize_route(
     """
     Optimize route to visit multiple cauldrons.
     Uses nearest neighbor heuristic with Dijkstra for path segments.
+    Falls back to direct routes if network paths aren't available.
     Returns (route, total_time, total_distance).
     """
     if not cauldrons_to_visit:
         path, time, distance = graph.dijkstra(start_node, end_node)
+        if not path or len(path) == 0:
+            # Fallback: return just market to market
+            return [start_node, end_node] if start_node != end_node else [start_node], 0.0, 0.0
         return path, time, distance
+    
+    # Filter out cauldrons that don't exist in the graph
+    valid_cauldrons = [c for c in cauldrons_to_visit if c in graph.nodes]
+    
+    if not valid_cauldrons:
+        # No valid cauldrons, return market route
+        return [start_node, end_node] if start_node != end_node else [start_node], 0.0, 0.0
     
     # Nearest neighbor approach
     route = [start_node]
-    unvisited = set(cauldrons_to_visit)
+    unvisited = set(valid_cauldrons)
     current = start_node
     total_time = 0.0
     total_distance = 0.0
@@ -173,29 +184,89 @@ def optimize_route(
         
         for cauldron in unvisited:
             path, time, distance = graph.dijkstra(current, cauldron)
-            if time < min_time:
-                min_time = time
-                nearest = cauldron
-                nearest_path = path
+            # If path not found, calculate direct distance as fallback
+            if not path or len(path) == 0 or time == float('inf'):
+                # Fallback: use direct route
+                if current in graph.nodes and cauldron in graph.nodes:
+                    current_node = graph.nodes[current]
+                    cauldron_node = graph.nodes[cauldron]
+                    if 'latitude' in current_node and 'longitude' in current_node and \
+                       'latitude' in cauldron_node and 'longitude' in cauldron_node:
+                        direct_distance = haversine_distance(
+                            current_node['latitude'], current_node['longitude'],
+                            cauldron_node['latitude'], cauldron_node['longitude']
+                        )
+                        # Estimate travel time: assume 30 km/h average speed
+                        estimated_time = (direct_distance / 30.0) * 60  # minutes
+                        if estimated_time < min_time:
+                            min_time = estimated_time
+                            nearest = cauldron
+                            nearest_path = [current, cauldron]
+            else:
+                if time < min_time:
+                    min_time = time
+                    nearest = cauldron
+                    nearest_path = path
         
         if nearest is None:
+            # Can't find path to any remaining cauldron, add them directly
+            for cauldron in unvisited:
+                if cauldron not in route:
+                    route.append(cauldron)
             break
         
         # Add path to route (skip first node as it's already in route)
-        route.extend(nearest_path[1:])
+        if len(nearest_path) > 1:
+            route.extend(nearest_path[1:])
+        else:
+            route.append(nearest)
         total_time += min_time
-        # Get distance for this segment from dijkstra result
-        _, _, segment_distance = graph.dijkstra(current, nearest)
-        total_distance += segment_distance
+        # Get distance for this segment
+        if nearest_path and len(nearest_path) > 1:
+            _, _, segment_distance = graph.dijkstra(current, nearest)
+            if segment_distance == float('inf') and current in graph.nodes and nearest in graph.nodes:
+                # Calculate direct distance
+                current_node = graph.nodes[current]
+                nearest_node = graph.nodes[nearest]
+                if 'latitude' in current_node and 'longitude' in current_node and \
+                   'latitude' in nearest_node and 'longitude' in nearest_node:
+                    segment_distance = haversine_distance(
+                        current_node['latitude'], current_node['longitude'],
+                        nearest_node['latitude'], nearest_node['longitude']
+                    )
+            total_distance += segment_distance if segment_distance != float('inf') else 0.0
         unvisited.remove(nearest)
         current = nearest
     
     # Return to end node
     if current != end_node:
         path, time, distance = graph.dijkstra(current, end_node)
-        route.extend(path[1:])
-        total_time += time
-        total_distance += distance
+        if path and len(path) > 0 and time != float('inf'):
+            route.extend(path[1:])
+            total_time += time
+            total_distance += distance
+        else:
+            # Fallback: direct route to end
+            route.append(end_node)
+            if current in graph.nodes and end_node in graph.nodes:
+                current_node = graph.nodes[current]
+                end_node_data = graph.nodes[end_node]
+                if 'latitude' in current_node and 'longitude' in current_node and \
+                   'latitude' in end_node_data and 'longitude' in end_node_data:
+                    direct_distance = haversine_distance(
+                        current_node['latitude'], current_node['longitude'],
+                        end_node_data['latitude'], end_node_data['longitude']
+                    )
+                    total_distance += direct_distance
+                    estimated_time = (direct_distance / 30.0) * 60
+                    total_time += estimated_time
+    
+    # Ensure route has at least start, cauldrons, and end
+    if len(route) == 1 and route[0] == start_node:
+        # Only market, add cauldrons directly
+        route.extend(valid_cauldrons)
+        if end_node not in route:
+            route.append(end_node)
     
     return route, total_time, total_distance
 

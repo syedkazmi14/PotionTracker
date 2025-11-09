@@ -5,6 +5,9 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Wifi, WifiOff, Activity } from 'lucide-react'
 import { DateTime } from 'luxon'
+import { useLiveData } from '@/hooks/useLiveData'
+import { CauldronVisualization } from '@/components/CauldronVisualization'
+import { Select } from '@/components/ui/select'
 
 interface LiveData {
   taken_liters: number
@@ -19,6 +22,7 @@ const API_BASE_URL = 'http://localhost:5000'
 export function LiveDataPage() {
   const [takenLiters, setTakenLiters] = useState(0)
   const [reportedLiters, setReportedLiters] = useState(0)
+  const [selectedCauldronId, setSelectedCauldronId] = useState<string>('')
   const [liveData, setLiveData] = useState<LiveData>({
     taken_liters: 0,
     reported_liters: 0,
@@ -27,6 +31,19 @@ export function LiveDataPage() {
     connected: false,
   })
   const [isPolling, setIsPolling] = useState(false)
+  
+  // Get live cauldron data
+  const { data: liveCauldronData, isLoading: cauldronsLoading } = useLiveData()
+  
+  // Find selected cauldron - safely handle undefined data
+  const selectedCauldron = liveCauldronData?.cauldrons?.find(c => c.id === selectedCauldronId) || null
+  
+  // Auto-select first cauldron when data loads
+  useEffect(() => {
+    if (liveCauldronData?.cauldrons?.length && !selectedCauldronId) {
+      setSelectedCauldronId(liveCauldronData.cauldrons[0].id)
+    }
+  }, [liveCauldronData, selectedCauldronId])
 
   // Poll for live data from TCP socket
   useEffect(() => {
@@ -55,6 +72,13 @@ export function LiveDataPage() {
 
     return () => clearInterval(interval)
   }, [isPolling])
+
+  // Sync takenLiters from liveData when it changes
+  useEffect(() => {
+    if (liveData.connected && liveData.timestamp) {
+      setTakenLiters(liveData.taken_liters)
+    }
+  }, [liveData.taken_liters, liveData.connected, liveData.timestamp])
 
   // Calculate discrepancy
   const discrepancy = takenLiters - reportedLiters
@@ -100,13 +124,53 @@ export function LiveDataPage() {
         </p>
       </div>
 
+      {/* Cauldron Visualization */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Cauldron Visualization</CardTitle>
+          <CardDescription>
+            Visual representation of selected cauldron fill level
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-4">
+            {/* Cauldron Selector */}
+            <div>
+              <label className="text-sm font-medium mb-2 block">Select Cauldron</label>
+              <Select
+                value={selectedCauldronId}
+                onChange={(e) => setSelectedCauldronId(e.target.value)}
+                className="w-full"
+                disabled={cauldronsLoading}
+              >
+                <option value="">Select a cauldron...</option>
+                {liveCauldronData?.cauldrons?.map(cauldron => (
+                  <option key={cauldron.id} value={cauldron.id}>
+                    {cauldron.name} (ID: {cauldron.id})
+                  </option>
+                )) || []}
+              </Select>
+              {cauldronsLoading && (
+                <p className="text-xs text-muted-foreground mt-1">Loading cauldrons...</p>
+              )}
+            </div>
+            
+            {/* Visualization */}
+            <CauldronVisualization 
+              cauldron={selectedCauldron} 
+              takenLiters={takenLiters} 
+            />
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Manual Input Section */}
         <Card>
           <CardHeader>
             <CardTitle>Manual Input</CardTitle>
             <CardDescription>
-              Adjust sliders to test discrepancy calculation
+              Adjust sliders to test discrepancy calculation and see cauldron fill update
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">

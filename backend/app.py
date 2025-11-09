@@ -433,19 +433,6 @@ def test_forecast():
     """Test route to verify forecast module is loaded."""
     return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})
 
-<<<<<<< HEAD
-# ===================================================================
-# SCRIPT EXECUTION
-# ===================================================================
-
-def background_task():
-    """A simple function that prints a message every 5 seconds."""
-    # Add flush=True here
-    print("[Background Thread] The test background task is starting.", flush=True)
-    while True:
-        # And most importantly, add it here
-        print(f"[Background Thread] Hello from the background! The time is {time.ctime()}", flush=True)
-        time.sleep(5)
 
 if __name__ == '__main__':
     

@@ -1,12 +1,29 @@
-from flask import Flask, jsonify, abort
+from flask import Flask, jsonify, abort, request
 from slope import calculate_daily_drain_rates, calculate_daily_slopes
 from utils import get_cauldron_data
 from ticket_tracker import verify_cauldrons
+from tcp_server import tcp_server
 from pathlib import Path
+from datetime import datetime
 import pandas as pd
 import json
 
 app = Flask(__name__)
+
+# Enable CORS for all routes
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
+
+# Start TCP server on app startup
+try:
+    tcp_server.start()
+    print("TCP server started successfully")
+except Exception as e:
+    print(f"Failed to start TCP server: {e}")
 
 # The line "from app import routes" has been removed.
 
@@ -62,3 +79,31 @@ def amounts():
 @app.route("/api/get_descrepencies/")
 def get_descrepencies():
     return verify_cauldrons()
+
+@app.route("/api/live_data")
+def get_live_data():
+    """Get latest live data from TCP socket connection"""
+    data = tcp_server.get_latest_data()
+    return jsonify(data)
+
+@app.route("/api/live_data/update", methods=['POST'])
+def update_live_data():
+    """Manually update live data (for testing without hardware)"""
+    try:
+        data = request.get_json()
+        taken_liters = float(data.get('taken_liters', 0))
+        reported_liters = float(data.get('reported_liters', 0))
+        discrepancy = taken_liters - reported_liters
+        
+        with tcp_server.lock:
+            tcp_server.latest_data = {
+                'taken_liters': taken_liters,
+                'reported_liters': reported_liters,
+                'discrepancy': discrepancy,
+                'timestamp': datetime.now().isoformat(),
+                'connected': True
+            }
+        
+        return jsonify(tcp_server.latest_data)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 400

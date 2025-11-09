@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Map, Menu, X, Wand2 } from 'lucide-react'
+import { LayoutDashboard, Map, Menu, X, Wand2, Activity } from 'lucide-react'
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { Button } from '@/components/ui/button'
@@ -14,6 +14,7 @@ export function MainLayout() {
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/map', label: 'Map', icon: Map },
+    { path: '/live-data', label: 'Live Data', icon: Activity },
     { path: '/witch-view', label: 'Witch View', icon: Wand2 },
   ]
 

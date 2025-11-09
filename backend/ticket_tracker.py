@@ -32,3 +32,5 @@ def verify_cauldrons():
                     cauldron_dict[cauldron].append({"date" : day, "descrepency" : descrepency})
 
     return json.dumps(cauldron_dict)
+with open("k.json", "w") as f:
+    f.write(verify_cauldrons())

@@ -14,12 +14,14 @@ interface MapViewProps {
     level: number
   }>
   onMarkerClick?: (id: string) => void
+  route?: Array<{ latitude: number; longitude: number }>
 }
 
-export function MapView({ className, markers = [], onMarkerClick }: MapViewProps) {
+export function MapView({ className, markers = [], onMarkerClick, route }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null)
   const map = useRef<mapboxgl.Map | null>(null)
   const markersRef = useRef<mapboxgl.Marker[]>([])
+  const routeLayerRef = useRef<string | null>(null)
 
   useEffect(() => {
     const token = import.meta.env.VITE_MAPBOX_TOKEN
@@ -114,7 +116,96 @@ export function MapView({ className, markers = [], onMarkerClick }: MapViewProps
 
       markersRef.current.push(marker)
     })
-  }, [markers, onMarkerClick])
+
+    // Draw route if provided
+    if (route && route.length > 1 && map.current) {
+      // Remove existing route layer if it exists
+      if (routeLayerRef.current && map.current.getLayer(routeLayerRef.current)) {
+        map.current.removeLayer(routeLayerRef.current)
+        map.current.removeSource(routeLayerRef.current)
+      }
+
+      const routeCoordinates = route.map(point => [point.longitude, point.latitude])
+
+      map.current.on('load', () => {
+        if (!map.current) return
+
+        map.current.addSource('route', {
+          type: 'geojson',
+          data: {
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: routeCoordinates,
+            },
+          },
+        })
+
+        map.current.addLayer({
+          id: 'route',
+          type: 'line',
+          source: 'route',
+          layout: {
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': '#10b981',
+            'line-width': 3,
+            'line-dasharray': [2, 2],
+          },
+        })
+
+        routeLayerRef.current = 'route'
+      })
+
+      // If map is already loaded, add route immediately
+      if (map.current.isStyleLoaded()) {
+        if (!map.current.getSource('route')) {
+          map.current.addSource('route', {
+            type: 'geojson',
+            data: {
+              type: 'Feature',
+              properties: {},
+              geometry: {
+                type: 'LineString',
+                coordinates: routeCoordinates,
+              },
+            },
+          })
+
+          map.current.addLayer({
+            id: 'route',
+            type: 'line',
+            source: 'route',
+            layout: {
+              'line-join': 'round',
+              'line-cap': 'round',
+            },
+            paint: {
+              'line-color': '#10b981',
+              'line-width': 3,
+              'line-dasharray': [2, 2],
+            },
+          })
+
+          routeLayerRef.current = 'route'
+        } else {
+          // Update existing route
+          const source = map.current.getSource('route') as mapboxgl.GeoJSONSource
+          source.setData({
+            type: 'Feature',
+            properties: {},
+            geometry: {
+              type: 'LineString',
+              coordinates: routeCoordinates,
+            },
+          })
+        }
+      }
+    }
+  }, [markers, onMarkerClick, route])
 
   return (
     <div className={cn("w-full h-full min-h-[400px] rounded-lg overflow-hidden", className)}>

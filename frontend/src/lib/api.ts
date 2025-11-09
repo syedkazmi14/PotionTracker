@@ -1,8 +1,6 @@
 import { Cauldron, CauldronDataPoint, Anomaly, Ticket } from '@/types'
 import { DateTime } from 'luxon'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3000'
-
 // Mock data
 const mockCauldrons: Cauldron[] = [
   {
@@ -223,6 +221,21 @@ export const api = {
       return mockTickets.filter(t => t.cauldronId === cauldronId)
     }
     return [...mockTickets]
+  },
+
+  async createTicket(data: { cauldronId: string; title: string; description: string }): Promise<Ticket> {
+    await new Promise(resolve => setTimeout(resolve, 300))
+    const newTicket: Ticket = {
+      id: `ticket-${Date.now()}`,
+      cauldronId: data.cauldronId,
+      title: data.title,
+      description: data.description,
+      status: 'open',
+      createdAt: DateTime.now().toISO(),
+      updatedAt: DateTime.now().toISO(),
+    }
+    mockTickets.push(newTicket)
+    return newTicket
   },
 }
 

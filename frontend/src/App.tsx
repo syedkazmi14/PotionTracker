@@ -3,6 +3,7 @@ import { MainLayout } from '@/layouts/MainLayout'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { MapPage } from '@/pages/MapPage'
 import { CauldronDetailPage } from '@/pages/CauldronDetailPage'
+import { WitchViewPage } from '@/pages/WitchViewPage'
 
 function App() {
   return (
@@ -11,6 +12,7 @@ function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
         <Route path="map" element={<MapPage />} />
+        <Route path="witch-view" element={<WitchViewPage />} />
         <Route path="cauldron/:id" element={<CauldronDetailPage />} />
       </Route>
     </Routes>

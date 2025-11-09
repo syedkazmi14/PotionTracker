@@ -1,5 +1,5 @@
 import { Outlet, Link, useLocation } from 'react-router-dom'
-import { LayoutDashboard, Map, Menu, X } from 'lucide-react'
+import { LayoutDashboard, Map, Menu, X, Wand2 } from 'lucide-react'
 import { useState } from 'react'
 import { DateTime } from 'luxon'
 import { Button } from '@/components/ui/button'
@@ -9,16 +9,23 @@ export function MainLayout() {
   const location = useLocation()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const lastUpdate = DateTime.now().toLocaleString(DateTime.TIME_WITH_SECONDS)
+  const isWitchView = location.pathname === '/witch-view'
 
   const navItems = [
     { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { path: '/map', label: 'Map', icon: Map },
+    { path: '/witch-view', label: 'Witch View', icon: Wand2 },
   ]
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className={cn("min-h-screen", isWitchView ? "bg-green-50" : "bg-background")}>
       {/* Topbar */}
-      <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+      <header className={cn(
+        "sticky top-0 z-50 w-full border-b backdrop-blur supports-[backdrop-filter]:bg-background/60",
+        isWitchView 
+          ? "bg-green-50/95 border-green-200" 
+          : "bg-background/95"
+      )}>
         <div className="container flex h-16 items-center justify-between px-4">
           <div className="flex items-center gap-4">
             <Button
@@ -30,7 +37,7 @@ export function MainLayout() {
               {sidebarOpen ? <X /> : <Menu />}
             </Button>
             <div className="flex items-center gap-2">
-            <span className="text-2xl text-indigo-500">
+            <span className={cn("text-2xl", isWitchView ? "text-green-600" : "text-indigo-500")}>
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   viewBox="0 0 24 24"
@@ -44,10 +51,10 @@ export function MainLayout() {
                   />
                 </svg>
               </span>
-              <h1 className="text-xl font-bold">CauldronWatch</h1>
+              <h1 className={cn("text-xl font-bold", isWitchView && "text-green-800")}>CauldronWatch</h1>
             </div>
           </div>
-          <div className="text-sm text-muted-foreground">
+          <div className={cn("text-sm", isWitchView ? "text-green-700" : "text-muted-foreground")}>
             Last update: {lastUpdate}
           </div>
         </div>
@@ -57,7 +64,8 @@ export function MainLayout() {
         {/* Sidebar */}
         <aside
           className={cn(
-            "fixed inset-y-0 left-0 z-40 w-64 border-r bg-background pt-16 transition-transform md:translate-x-0",
+            "fixed inset-y-0 left-0 z-40 w-64 border-r pt-16 transition-transform md:translate-x-0",
+            isWitchView ? "bg-green-50 border-green-200" : "bg-background",
             sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
           )}
         >
@@ -65,6 +73,7 @@ export function MainLayout() {
             {navItems.map((item) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
+              const isWitchItem = item.path === '/witch-view'
               return (
                 <Link
                   key={item.path}
@@ -73,7 +82,11 @@ export function MainLayout() {
                   className={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                     isActive
-                      ? "bg-accent text-accent-foreground"
+                      ? isWitchItem
+                        ? "bg-green-100 text-green-900"
+                        : "bg-accent text-accent-foreground"
+                      : isWitchItem && isWitchView
+                      ? "text-green-700 hover:bg-green-100"
                       : "text-muted-foreground hover:bg-accent/50 hover:text-foreground"
                   )}
                 >

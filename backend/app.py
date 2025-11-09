@@ -4,7 +4,6 @@ from utils import get_cauldron_data
 from utils.forecasting import get_forecast
 from utils.scheduling import create_daily_schedule, fetch_cauldrons, fetch_couriers, fetch_market, fetch_network_data
 from ticket_tracker import verify_cauldrons
-from tcp_server import tcp_server
 from pathlib import Path
 from datetime import datetime
 import pandas as pd
@@ -48,55 +47,112 @@ live_db = None
 # BACKGROUND WORKER THREADS
 # ===================================================================
 
-def tcp_client_worker():
+def client_handler_thread(connection, client_address, stop_event):
     """
-    Connects to a TCP server to receive live data.
-    (This function remains unchanged)
+    This function runs in its own thread and handles communication
+    with a single connected client.
     """
-    HOST = '0.0.0.0'
-    PORT = 3000
-    global live_db 
-    while True:
-        try:
-            print("[TCP Thread] Attempting to connect...")
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.connect((HOST, PORT))
-                print(f"[TCP Thread] Connected to {HOST}:{PORT}")
-                while True:
-                    data = s.recv(16)
+    print(f"[TCP Handler: {client_address}] Thread started.", flush=True)
+    try:
+        # Use a context manager to ensure the connection is always closed
+        with connection:
+            connection.settimeout(1.0) # Make recv non-blocking
+
+            while not stop_event.is_set():
+                try:
+                    data = connection.recv(20)
                     if not data:
-                        print("[TCP Thread] Connection closed by server. Reconnecting...")
-                        break 
+                        print(f"[TCP Handler: {client_address}] Connection closed by client.", flush=True)
+                        break # Exit the loop if client disconnects
                     
-                    pot1_int, pot2_int, bv_int = struct.unpack('<III', data[0:12])
-                    bit_array = []
-                    for i in range(31, -1, -1):
-                        # Right shift the bits of bv_int by i positions
-                        # and then use a bitwise AND with 1 to get the least significant bit
-                        bit = (bv_int >> i) & 1
-                        bit_array.append(bit)
-                    
-                    print(pot1_int, pot2_int, bit_array)
-                    # Safely append data to our shared deque
-                    with tcp_data_lock:
-                        tcp_data.append({'timestamp': time.time(), 'message': decoded_data})
+                    if len(data) == 20:
+                        header, pot1, pot2, bv_int, unused = struct.unpack('<IIIII', data)
+                        if header == 1:
+                            pass
+                        elif header ==2:
+                            pass
+                        elif header == 3:
+                            pass
+                        elif header ==4:
+                            pass
+                        print(f"[TCP Handler: {client_address}] Received: header={header} pot1={pot1}, pot2={pot2}", flush=True)
+                        # Here you would process the data, e.g., update the live_db
+                        # with df_lock:
+                        #    # update logic here...
+                    else:
+                        print(f"[TCP Handler: {client_address}] Received incomplete data packet.", flush=True)
 
-        except ConnectionRefusedError:
-            print("[TCP Thread] Connection refused. Retrying in 5 seconds...")
-            time.sleep(5)
-        except Exception as e:
-            print(f"[TCP Thread] An error occurred: {e}. Retrying in 5 seconds...")
-            time.sleep(5)
+                except socket.timeout:
+                    # It's normal for recv to time out; this allows us to check the stop_event
+                    continue
+                except (ConnectionResetError, BrokenPipeError):
+                    print(f"[TCP Handler: {client_address}] Connection was forcibly closed.", flush=True)
+                    break # Exit the loop
+                except Exception as e:
+                    print(f"[TCP Handler: {client_address}] Error during recv: {e}", flush=True)
+                    break # Exit the loop on other errors
+    
+    finally:
+        print(f"[TCP Handler: {client_address}] Thread finished.", flush=True)
 
 
-def data_update_worker():
+def start_tcp_server(stop_event):
+    """
+    Starts a non-blocking TCP server that listens for connections and
+    spawns a new thread to handle each client.
+    """ 
+    host = '0.0.0.0'
+    port = 3000
+    
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        try:
+            # This option allows the server to reuse the address, preventing "Address already in use" errors
+            server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            server_socket.bind((host, port))
+        except OSError as e:
+            print(f"[TCP Listener] FATAL: Could not bind to port {port}. {e}", flush=True)
+            return
+
+        server_socket.listen()
+        server_socket.settimeout(1.0) # Make the listener non-blocking
+        print(f"[TCP Listener] Server listening on {host}:{port}", flush=True)
+
+        client_threads = []
+
+        while not stop_event.is_set():
+            try:
+                # Accept a new connection (will only block for 1 second)
+                connection, client_address = server_socket.accept()
+                
+                print(f"[TCP Listener] Accepted new connection from {client_address}", flush=True)
+                
+                # Create and start a new thread to handle this client
+                handler = threading.Thread(
+                    target=client_handler_thread, 
+                    args=(connection, client_address, stop_event),
+                    daemon=True # Daemon threads won't block program exit
+                )
+                handler.start()
+                client_threads.append(handler)
+
+            except socket.timeout:
+                # This is the normal case when no one is connecting.
+                # It allows us to check the stop_event again.
+                continue
+            except Exception as e:
+                print(f"[TCP Listener] An error occurred while accepting connections: {e}", flush=True)
+                stop_event.wait(1) # Wait a moment before retrying
+
+    print("[TCP Listener] Stop event received. Shutting down server socket.", flush=True)
+
+def data_update_worker(stop_event):
     """
     This function runs in a background thread. Every 15 minutes, it
     re-calculates the dataframes and updates the global variables safely.
     """
     global data_db, fill_rate_df, drain_rate_df
     
-    while True:
+    while not stop_event.is_set():
         print("[Update Thread] Starting scheduled data update...")
         try:
             # Perform the expensive calculations first
@@ -121,8 +177,7 @@ def data_update_worker():
             print(f"[Update Thread] An error occurred during the update: {e}")
             
         # Wait for 15 minutes (900 seconds) before the next run
-        print("[Update Thread] Update complete. Sleeping for 15 minutes.")
-        time.sleep(900)
+        stop_event.wait(900)
 
 # ===================================================================
 # INITIAL DATA LOAD ON STARTUP
@@ -157,14 +212,6 @@ def after_request(response):
     response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
     return response
 
-# Start TCP server on app startup
-try:
-    tcp_server.start()
-    print("TCP server started successfully")
-except Exception as e:
-    print(f"Failed to start TCP server: {e}")
-
-initial_load()
 # --- Routes ---
 @app.route('/')
 def index():
@@ -192,6 +239,7 @@ def get_live_drain_rate_section_route(cauldron_id, date):
     if result.empty:
         abort(404, description="Drain rate data not found for the specified cauldron and date.")
     return json.dumps(result.to_dict())
+
 @app.route("/api/live_data")
 def live_data():
     try:
@@ -218,12 +266,6 @@ def get_live_descrepencies():
 def get_descrepencies():
     return verify_cauldrons(live_db)
 
-@app.route("/api/live_data")
-def get_live_data():
-    """Get latest live data from TCP socket connection"""
-    data = tcp_server.get_latest_data()
-    return jsonify(data)
-
 @app.route("/api/live_data/update", methods=['POST'])
 def update_live_data():
     """Manually update live data (for testing without hardware)"""
@@ -233,16 +275,20 @@ def update_live_data():
         reported_liters = float(data.get('reported_liters', 0))
         discrepancy = taken_liters - reported_liters
         
-        with tcp_server.lock:
-            tcp_server.latest_data = {
-                'taken_liters': taken_liters,
-                'reported_liters': reported_liters,
-                'discrepancy': discrepancy,
-                'timestamp': datetime.now().isoformat(),
-                'connected': True
-            }
+        # This part of the original code relied on a 'tcp_server' object
+        # that was not defined. It's better to interact with the shared
+        # 'tcp_data' deque for thread safety.
+        new_data = {
+            'taken_liters': taken_liters,
+            'reported_liters': reported_liters,
+            'discrepancy': discrepancy,
+            'timestamp': datetime.now().isoformat(),
+            'connected': True
+        }
+        with tcp_data_lock:
+            tcp_data.append(new_data)
         
-        return jsonify(tcp_server.latest_data)
+        return jsonify(new_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
 
@@ -386,3 +432,35 @@ def get_fill_rate_live(cauldron_id, date):
 def test_forecast():
     """Test route to verify forecast module is loaded."""
     return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})
+
+# ===================================================================
+# SCRIPT EXECUTION
+# ===================================================================
+
+def background_task():
+    """A simple function that prints a message every 5 seconds."""
+    # Add flush=True here
+    print("[Background Thread] The test background task is starting.", flush=True)
+    while True:
+        # And most importantly, add it here
+        print(f"[Background Thread] Hello from the background! The time is {time.ctime()}", flush=True)
+        time.sleep(5)
+
+if __name__ == '__main__':
+    
+    # --- 2. Start the TCP server in a separate background thread ---
+    tcp_thread = threading.Thread(target=start_tcp_server, kwargs={'host': '0.0.0.0', 'port': 3000}, daemon=True)
+    tcp_thread.start()
+    print("[Main Thread] TCP server thread has been started.")
+    
+    # --- 1. Start the background thread for periodic data updates ---
+    # The 'daemon=True' flag ensures this thread will exit when the main app exits.
+    update_thread = threading.Thread(target=data_update_worker, daemon=True)
+    update_thread.start()
+    print("[Main Thread] Data update worker thread has been started.")
+
+
+    # --- 3. Run the Flask web application in the main thread ---
+    # The host='0.0.0.0' makes the server accessible from other machines on your network.
+    # Set debug=True for development, but turn it off for production.
+    app.run(host='0.0.0.0', port=5000, debug=False)

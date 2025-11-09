@@ -14,6 +14,7 @@ import threading
 from collections import deque
 import time
 import socket
+import struct 
 import requests
 
 # ===================================================================
@@ -52,7 +53,7 @@ def tcp_client_worker():
     Connects to a TCP server to receive live data.
     (This function remains unchanged)
     """
-    HOST = '127.0.0.1'
+    HOST = '0.0.0.0'
     PORT = 3000
 
     while True:
@@ -67,7 +68,14 @@ def tcp_client_worker():
                         print("[TCP Thread] Connection closed by server. Reconnecting...")
                         break 
                     
-                    decoded_data = data.decode('utf-8')
+                    pot1_int, pot2_int, bv_int = struct.unpack('<III', data[0:12])
+                    bit_array = []
+                    for i in range(31, -1, -1):
+                        # Right shift the bits of bv_int by i positions
+                        # and then use a bitwise AND with 1 to get the least significant bit
+                        bit = (bv_int >> i) & 1
+                        bit_array.append(bit)
+                    
                     # Safely append data to our shared deque
                     with tcp_data_lock:
                         tcp_data.append({'timestamp': time.time(), 'message': decoded_data})

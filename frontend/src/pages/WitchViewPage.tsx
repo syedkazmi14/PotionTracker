@@ -1,10 +1,11 @@
 import { useState, useMemo } from 'react'
 import { useCauldrons } from '@/hooks/useCauldrons'
 import { MapView } from '@/components/MapView'
+import { ForecastSchedule } from '@/components/ForecastSchedule'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Wand2, MapPin, Plus, X } from 'lucide-react'
+import { Wand2, MapPin, Plus, X, Route, BarChart3 } from 'lucide-react'
 import { api } from '@/lib/api'
 import { useQueryClient } from '@tanstack/react-query'
 import { Cauldron } from '@/types'
@@ -81,6 +82,7 @@ export function WitchViewPage() {
   const [selectedStopIndex, setSelectedStopIndex] = useState<number | null>(null)
   const [ticketForm, setTicketForm] = useState<TicketFormData>({ title: '', description: '' })
   const [showTicketForm, setShowTicketForm] = useState(false)
+  const [activeTab, setActiveTab] = useState<'route' | 'forecast'>('route')
 
   // Optimize route
   const optimizedRoute = useMemo(() => optimizeRoute(cauldrons), [cauldrons])
@@ -146,6 +148,39 @@ export function WitchViewPage() {
         </h2>
         <p className="text-gray-700">Optimized route for cauldron maintenance</p>
       </div>
+
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="flex gap-4">
+          <button
+            onClick={() => setActiveTab('route')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'route'
+                ? 'border-green-600 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <Route className="h-4 w-4 inline mr-2" />
+            Route View
+          </button>
+          <button
+            onClick={() => setActiveTab('forecast')}
+            className={`px-4 py-2 font-medium text-sm border-b-2 transition-colors ${
+              activeTab === 'forecast'
+                ? 'border-green-600 text-green-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            <BarChart3 className="h-4 w-4 inline mr-2" />
+            Forecast & Schedule
+          </button>
+        </nav>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === 'forecast' ? (
+        <ForecastSchedule />
+      ) : (
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Route List */}
@@ -268,6 +303,7 @@ export function WitchViewPage() {
           </Card>
         </div>
       </div>
+      )}
     </div>
   )
 }

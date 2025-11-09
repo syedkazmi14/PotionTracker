@@ -1,6 +1,8 @@
 from flask import Flask, jsonify, abort, request
 from slope import calculate_daily_drain_rates, calculate_daily_slopes
 from utils import get_cauldron_data
+from utils.forecasting import get_forecast
+from utils.scheduling import create_daily_schedule, fetch_cauldrons, fetch_couriers, fetch_market, fetch_network_data
 from ticket_tracker import verify_cauldrons
 from tcp_server import tcp_server
 from pathlib import Path
@@ -12,6 +14,7 @@ import threading
 from collections import deque
 import time
 import socket
+import requests
 
 # ===================================================================
 # THREAD-SAFE GLOBAL DATA STORES & LOCKS
@@ -30,6 +33,15 @@ df_lock = threading.Lock()
 data_db = None
 fill_rate_df = None
 drain_rate_df = None
+
+# --- For Cached Static Data ---
+static_data_lock = threading.Lock()
+cached_cauldrons = None
+cached_couriers = None
+cached_market = None
+cached_network = None
+cache_timestamp = None
+CACHE_DURATION_SECONDS = 3600  # Cache for 1 hour
 
 # ===================================================================
 # BACKGROUND WORKER THREADS
@@ -173,11 +185,6 @@ initial_load()
 def index():
     return "Hello, World!"
 
-@app.route('/api/live_data')
-def get_live_data():
-    with tcp_data_lock:
-        return jsonify(list(tcp_data))
-
 @app.route("/api/drain_rate/<cauldron_id>/<date>")
 def get_drain_rate_section_route(cauldron_id, date):
     with df_lock: # Acquire lock before reading
@@ -260,3 +267,99 @@ def get_cauldron_levels_data():
         return jsonify(response.json())
     except requests.exceptions.RequestException as e:
         return jsonify({'error': str(e)}), 500
+
+# ===================================================================
+# FORECASTING AND SCHEDULING ENDPOINTS
+# ===================================================================
+
+def get_cached_static_data():
+    """Get or refresh cached static data."""
+    global cached_cauldrons, cached_couriers, cached_market, cached_network, cache_timestamp
+    
+    with static_data_lock:
+        current_time = time.time()
+        
+        # Check if cache is valid
+        if (cache_timestamp is None or 
+            (current_time - cache_timestamp) > CACHE_DURATION_SECONDS or
+            cached_cauldrons is None):
+            
+            print("[Cache] Refreshing static data cache...")
+            try:
+                cached_cauldrons = fetch_cauldrons()
+                cached_couriers = fetch_couriers()
+                cached_market = fetch_market()
+                cached_network = fetch_network_data()
+                cache_timestamp = current_time
+                print("[Cache] Static data cache refreshed.")
+            except Exception as e:
+                print(f"[Cache] Error refreshing cache: {e}")
+        
+        return cached_cauldrons, cached_couriers, cached_market, cached_network
+
+@app.route("/api/Forecast")
+def get_forecast_endpoint():
+    """Get forecast data for all cauldrons."""
+    try:
+        cauldrons, _, _, _ = get_cached_static_data()
+        if not cauldrons:
+            return jsonify({'error': 'No cauldron data available'}), 503
+        
+        # Convert to dict format expected by forecasting
+        cauldron_info = {c['id']: c for c in cauldrons}
+        
+        forecasts = get_forecast(cauldron_info)
+        return jsonify(forecasts)
+    except Exception as e:
+        print(f"Error in forecast endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/Schedule/daily")
+def get_daily_schedule():
+    """Get daily schedule for couriers."""
+    try:
+        date = request.args.get('date')  # Optional date parameter
+        schedule = create_daily_schedule(date)
+        return jsonify(schedule)
+    except Exception as e:
+        print(f"Error in schedule endpoint: {e}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/couriers")
+def get_couriers_endpoint():
+    """Get courier information."""
+    try:
+        _, couriers, _, _ = get_cached_static_data()
+        if couriers is None:
+            return jsonify({'error': 'No courier data available'}), 503
+        return jsonify(couriers)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/market")
+def get_market_endpoint():
+    """Get market information."""
+    try:
+        _, _, market, _ = get_cached_static_data()
+        if market is None:
+            return jsonify({'error': 'No market data available'}), 503
+        return jsonify(market)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/network")
+def get_network_endpoint():
+    """Get network information."""
+    try:
+        _, _, _, network = get_cached_static_data()
+        if network is None:
+            return jsonify({'error': 'No network data available'}), 503
+        return jsonify(network)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# Test route to verify new endpoints are loaded
+@app.route("/api/test-forecast")
+def test_forecast():
+    """Test route to verify forecast module is loaded."""
+    return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})

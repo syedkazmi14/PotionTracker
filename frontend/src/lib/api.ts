@@ -1,4 +1,4 @@
-import { Cauldron, CauldronDataPoint, Anomaly, Ticket, DiscrepancyData, CauldronInfo, CauldronLevelsData } from '@/types'
+import { Cauldron, CauldronDataPoint, Anomaly, Ticket, DiscrepancyData, CauldronInfo, CauldronLevelsData, Forecast, DailySchedule, Courier, Market, Network } from '@/types'
 import { DateTime } from 'luxon'
 
 // Mock data
@@ -281,6 +281,79 @@ export const api = {
       console.error('Failed to fetch discrepancy data:', error)
       // Fallback to empty data if API fails
       return {}
+    }
+  },
+
+  async getForecast(): Promise<Forecast[]> {
+    try {
+      const response = await fetch('http://localhost:5000/api/Forecast')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Failed to fetch forecast data:', error)
+      throw error
+    }
+  },
+
+  async getDailySchedule(date?: string): Promise<DailySchedule> {
+    try {
+      const url = date 
+        ? `http://localhost:5000/api/Schedule/daily?date=${date}`
+        : 'http://localhost:5000/api/Schedule/daily'
+      const response = await fetch(url)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Failed to fetch schedule data:', error)
+      throw error
+    }
+  },
+
+  async getCouriers(): Promise<Courier[]> {
+    try {
+      const response = await fetch('http://localhost:5000/api/couriers')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Failed to fetch couriers:', error)
+      throw error
+    }
+  },
+
+  async getMarket(): Promise<Market> {
+    try {
+      const response = await fetch('http://localhost:5000/api/market')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Failed to fetch market:', error)
+      throw error
+    }
+  },
+
+  async getNetwork(): Promise<Network> {
+    try {
+      const response = await fetch('http://localhost:5000/api/network')
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+      const data = await response.json()
+      return data
+    } catch (error) {
+      console.error('Failed to fetch network:', error)
+      throw error
     }
   },
 }

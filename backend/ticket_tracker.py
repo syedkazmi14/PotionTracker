@@ -1,6 +1,6 @@
 from utils import get_ticket_data
 from utils import get_cauldron_data
-from slope import calculate_daily_slopes
+from slope import calculate_daily_slopes, calculate_daily_drain_rates
 import json
 
 def calculate_distance(start, end, slope, generation_minutes, amounts):
@@ -32,5 +32,3 @@ def verify_cauldrons():
                     cauldron_dict[cauldron].append({"date" : day, "descrepency" : descrepency})
 
     return json.dumps(cauldron_dict)
-with open("k.json", "w") as f:
-    f.write(verify_cauldrons())

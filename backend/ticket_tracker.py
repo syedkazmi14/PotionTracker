@@ -12,9 +12,9 @@ def calculate_distance(start, end, slope, generation_minutes, amounts):
 
 
     
-def verify_cauldrons():
+def verify_cauldrons(df):
     ticket_data = get_ticket_data()
-    daily_slopes = calculate_daily_slopes()
+    daily_slopes = calculate_daily_slopes(df)
     days = ticket_data["date"].unique()   
     cauldrons = ticket_data["cauldron_id"].unique()
     cauldron_dict = { cauldron : [] for cauldron in cauldrons}

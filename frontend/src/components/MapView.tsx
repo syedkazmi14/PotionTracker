@@ -11,6 +11,7 @@ interface MapViewProps {
     longitude: number
     status: string
     name: string
+    level: number
   }>
   onMarkerClick?: (id: string) => void
 }
@@ -64,13 +65,32 @@ export function MapView({ className, markers = [], onMarkerClick }: MapViewProps
     markersRef.current = []
 
     // Add new markers
-    markers.forEach(({ id, latitude, longitude, status, name }) => {
-      const getStatusColor = (status: string) => {
-        switch (status) {
-          case 'online': return '#10b981'
-          case 'warning': return '#f59e0b'
-          case 'error': return '#ef4444'
-          default: return '#6b7280'
+    markers.forEach(({ id, latitude, longitude, status, name, level }) => {
+      const getLevelColor = (level: number, status: string) => {
+        // If offline, return gray
+        if (status === 'offline') {
+          return '#6b7280'
+        }
+        
+        // Calculate color based on level
+        // Green (0-30%) -> Yellow (30-80%) -> Red (80-100%)
+        if (level >= 0 && level < 30) {
+          // Green: #10b981
+          return '#10b981'
+        } else if (level >= 30 && level < 80) {
+          // Interpolate between green and yellow
+          const ratio = (level - 30) / 50 // 0 to 1 as level goes from 30 to 80
+          const r = Math.round(16 + (245 - 16) * ratio) // 16 -> 245
+          const g = Math.round(185 + (158 - 185) * ratio) // 185 -> 158
+          const b = Math.round(129 + (30 - 129) * ratio) // 129 -> 30
+          return `rgb(${r}, ${g}, ${b})`
+        } else {
+          // Interpolate between yellow and red
+          const ratio = (level - 80) / 20 // 0 to 1 as level goes from 80 to 100
+          const r = Math.round(245 + (239 - 245) * ratio) // 245 -> 239
+          const g = Math.round(158 + (68 - 158) * ratio) // 158 -> 68
+          const b = Math.round(30 + (68 - 30) * ratio) // 30 -> 68
+          return `rgb(${r}, ${g}, ${b})`
         }
       }
 
@@ -79,10 +99,10 @@ export function MapView({ className, markers = [], onMarkerClick }: MapViewProps
       el.style.width = '20px'
       el.style.height = '20px'
       el.style.borderRadius = '50%'
-      el.style.backgroundColor = getStatusColor(status)
+      el.style.backgroundColor = getLevelColor(level, status)
       el.style.border = '2px solid white'
       el.style.cursor = 'pointer'
-      el.title = name
+      el.title = `${name} - ${level}%`
 
       const marker = new mapboxgl.Marker(el)
         .setLngLat([longitude, latitude])

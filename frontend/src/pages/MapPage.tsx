@@ -32,6 +32,7 @@ export function MapPage() {
     longitude: c.longitude,
     status: c.status,
     name: c.name,
+    level: c.level,
   }))
 
   if (isLoading) {
@@ -118,16 +119,16 @@ export function MapPage() {
             </CardHeader>
             <CardContent className="space-y-2 text-sm">
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-green-500 border-2 border-white" />
-                <span>Online</span>
+                <div className="w-4 h-4 rounded-full bg-[#10b981] border-2 border-white" />
+                <span>0-30% (Low)</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-yellow-500 border-2 border-white" />
-                <span>Warning</span>
+                <div className="w-4 h-4 rounded-full bg-[#f59e0b] border-2 border-white" />
+                <span>30-80% (Medium)</span>
               </div>
               <div className="flex items-center gap-2">
-                <div className="w-4 h-4 rounded-full bg-red-500 border-2 border-white" />
-                <span>Error</span>
+                <div className="w-4 h-4 rounded-full bg-[#ef4444] border-2 border-white" />
+                <span>80-100% (Almost Full)</span>
               </div>
               <div className="flex items-center gap-2">
                 <div className="w-4 h-4 rounded-full bg-gray-500 border-2 border-white" />

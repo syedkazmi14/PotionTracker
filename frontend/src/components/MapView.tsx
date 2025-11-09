@@ -284,14 +284,15 @@ export function MapView({
       }
     }
 
-    // Draw multiple routes if provided
+    // Draw multiple routes if provided (as dotted lines for courier routes)
     routes.forEach((routePoints, index) => {
       if (routePoints.length > 1) {
         const routeId = `route-${index}`
         const routeCoordinates = routePoints.map(point => [point.longitude, point.latitude])
         const colors = ['#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444']
         const color = colors[index % colors.length]
-        addRoute(routeId, routeCoordinates, color, 2)
+        // Draw as dotted line for courier routes
+        addRoute(routeId, routeCoordinates, color, 3, true)
         if (!routeLayerRef.current.includes(routeId)) {
           routeLayerRef.current.push(routeId)
         }

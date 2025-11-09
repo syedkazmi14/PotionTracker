@@ -355,3 +355,11 @@ def get_tickets_endpoint():
 def test_forecast():
     """Test route to verify forecast module is loaded."""
     return jsonify({'status': 'ok', 'message': 'Forecast endpoints are loaded'})
+
+if __name__ == '__main__':
+    # Start background worker threads
+    data_thread = threading.Thread(target=data_update_worker, daemon=True)
+    data_thread.start()
+    
+    # Run Flask app
+    app.run(host='0.0.0.0', port=5000, debug=True)

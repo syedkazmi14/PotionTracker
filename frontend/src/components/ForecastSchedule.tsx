@@ -15,7 +15,19 @@ import { AlertTriangle, Clock, Users, MapPin } from 'lucide-react'
 
 export function ForecastSchedule() {
   const { data: forecasts = [], isLoading: forecastsLoading } = useForecast()
-  const { data: schedule, isLoading: scheduleLoading } = useSchedule()
+  const [selectedCauldron, setSelectedCauldron] = useState<string | null>(null)
+  const [simulate24h, setSimulate24h] = useState(false)
+  
+  // Calculate date for schedule - today or tomorrow (24h from now)
+  const scheduleDate = useMemo(() => {
+    if (simulate24h) {
+      const tomorrow = DateTime.now().plus({ days: 1 })
+      return tomorrow.toFormat('yyyy-MM-dd')
+    }
+    return undefined // undefined means today
+  }, [simulate24h])
+  
+  const { data: schedule, isLoading: scheduleLoading } = useSchedule(scheduleDate)
   const { data: cauldrons = [] } = useCauldrons()
   
   const { data: cauldronsInfo = [] } = useQuery<CauldronInfo[]>({
@@ -33,12 +45,9 @@ export function ForecastSchedule() {
     queryFn: () => api.getNetwork(),
   })
 
-  const [selectedCauldron, setSelectedCauldron] = useState<string | null>(null)
-  const [simulate24h, setSimulate24h] = useState(false)
-
-  // Get cauldrons at risk (within 12 hours)
+  // Get cauldrons at risk (at or above 80%)
   const atRiskCauldrons = useMemo(() => {
-    return forecasts.filter(f => f.at_risk_12h)
+    return forecasts.filter(f => f.current_percentage >= 80)
   }, [forecasts])
 
   // Prepare forecast chart data
@@ -60,13 +69,14 @@ export function ForecastSchedule() {
 
   // Prepare courier requirements data with future dates
   const courierData = useMemo(() => {
-    const data: Array<{ date: string; couriers: number }> = []
+    const data: Array<{ date: string; couriers: number; distance?: number }> = []
     
     // Add today's schedule
     if (schedule) {
       data.push({
         date: schedule.date,
         couriers: schedule.couriers_needed,
+        distance: schedule.total_distance_km,
       })
     }
     
@@ -79,31 +89,43 @@ export function ForecastSchedule() {
         const dateStr = futureDate.toFormat('yyyy-MM-dd')
         
         // Calculate how many cauldrons will need pickups on this date
-        // A cauldron needs a pickup if it will reach 100% before or on this date
-        let couriersNeeded = 0
+        // A cauldron needs a pickup if it is at/above 80% OR will reach 80% on or before this date
         const cauldronsNeedingPickup: string[] = []
         
         forecasts.forEach(forecast => {
-          if (!forecast.time_to_100_percent) return
+          const currentPercent = forecast.current_percentage
+          const timeTo80 = forecast.time_to_80_percent
           
-          const overflowTime = DateTime.fromISO(forecast.time_to_100_percent)
-          const futureDateEnd = futureDate.endOf('day')
-          
-          // If overflow happens before or on this date, it needs a pickup
-          if (overflowTime <= futureDateEnd) {
-            // Check if this cauldron hasn't already been counted (in case multiple forecasts)
+          // Already at or above 80%
+          if (currentPercent >= 80) {
             if (!cauldronsNeedingPickup.includes(forecast.cauldron_id)) {
               cauldronsNeedingPickup.push(forecast.cauldron_id)
+            }
+            return
+          }
+          
+          // Will reach 80% on or before this date
+          if (timeTo80) {
+            const thresholdTime = DateTime.fromISO(timeTo80)
+            const futureDateEnd = futureDate.endOf('day')
+            
+            if (thresholdTime <= futureDateEnd) {
+              if (!cauldronsNeedingPickup.includes(forecast.cauldron_id)) {
+                cauldronsNeedingPickup.push(forecast.cauldron_id)
+              }
             }
           }
         })
         
         // Estimate couriers needed based on number of cauldrons needing pickups
-        // Assume each courier can handle ~3-5 cauldrons (rough estimate)
-        // This is a simplified calculation - in reality it would use route optimization
+        // Each courier has 100L capacity, estimate volume per cauldron
+        let couriersNeeded = 0
         if (cauldronsNeedingPickup.length > 0) {
-          // Rough estimate: 1 courier per 4 cauldrons, minimum 1
-          couriersNeeded = Math.max(1, Math.ceil(cauldronsNeedingPickup.length / 4))
+          // Rough estimate: assume each cauldron needs ~80L collected (80% of typical 100L max)
+          // With 100L capacity per courier, estimate: total_volume / 100
+          const estimatedVolumePerCauldron = 80 // Rough estimate
+          const totalVolume = cauldronsNeedingPickup.length * estimatedVolumePerCauldron
+          couriersNeeded = Math.max(1, Math.ceil(totalVolume / 100))
         }
         
         data.push({
@@ -219,31 +241,10 @@ export function ForecastSchedule() {
             onClick={() => setSimulate24h(!simulate24h)}
             variant={simulate24h ? "default" : "outline"}
           >
-            {simulate24h ? 'Hide' : 'Simulate'} Next 24h
+            {simulate24h ? 'Show Today' : 'Simulate Next 24h'}
           </Button>
         </div>
         
-        {atRiskCauldrons.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-red-600 mt-0.5" />
-            <div>
-              <h3 className="font-semibold text-red-900">Cauldrons at Risk</h3>
-              <p className="text-sm text-red-700">
-                {atRiskCauldrons.length} cauldron{atRiskCauldrons.length !== 1 ? 's' : ''} at risk of overflow within the next 12 hours
-              </p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                {atRiskCauldrons.map(f => {
-                  const cauldron = cauldronsInfo.find(c => c.id === f.cauldron_id)
-                  return (
-                    <Badge key={f.cauldron_id} variant="destructive">
-                      {cauldron?.name || f.cauldron_id}: {f.current_percentage.toFixed(1)}%
-                    </Badge>
-                  )
-                })}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Summary Cards */}
@@ -272,7 +273,7 @@ export function ForecastSchedule() {
               <AlertTriangle className="h-8 w-8 text-red-600" />
               <div>
                 <div className="text-3xl font-bold text-gray-900">{atRiskCauldrons.length}</div>
-                <p className="text-xs text-gray-500">Within 12 hours</p>
+                <p className="text-xs text-gray-500">At or above 80%</p>
               </div>
             </div>
           </CardContent>
@@ -371,6 +372,13 @@ export function ForecastSchedule() {
                       const date = DateTime.fromISO(value)
                       return date.toFormat('MMM dd, yyyy')
                     }}
+                    formatter={(value: any, name: any, props: any) => {
+                      const data = props.payload
+                      if (data.distance !== undefined) {
+                        return [`${value} couriers (${data.distance.toFixed(2)} km)`, 'Couriers & Distance']
+                      }
+                      return [`${value} couriers`, 'Couriers Needed']
+                    }}
                   />
                   <Bar dataKey="couriers" fill="#10b981" name="Couriers Needed" />
                 </BarChart>
@@ -386,7 +394,14 @@ export function ForecastSchedule() {
       {schedule && schedule.assignments.length > 0 && (
         <Card className="bg-white text-gray-900">
           <CardHeader>
-            <CardTitle className="text-gray-900">Today's Courier Assignments</CardTitle>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-gray-900">Today's Courier Assignments</CardTitle>
+              {schedule.total_distance_km !== undefined && (
+                <div className="text-sm font-medium text-gray-700">
+                  Total Distance: {schedule.total_distance_km.toFixed(2)} km
+                </div>
+              )}
+            </div>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
@@ -398,6 +413,11 @@ export function ForecastSchedule() {
                       <p className="text-sm text-gray-600">
                         {assignment.start} - {assignment.end} ({assignment.total_time_minutes} min)
                       </p>
+                      {assignment.distance_km !== undefined && (
+                        <p className="text-xs text-gray-500 mt-1">
+                          Distance: {assignment.distance_km.toFixed(2)} km
+                        </p>
+                      )}
                     </div>
                     <Badge variant="outline" className="text-gray-900">
                       {assignment.volume_collected.toFixed(1)} L
@@ -436,7 +456,16 @@ export function ForecastSchedule() {
       {/* Route Visualization */}
       <Card className="bg-white text-gray-900">
         <CardHeader>
-          <CardTitle className="text-gray-900">Route Visualization</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-gray-900">
+              Route Visualization {simulate24h && '(Next 24h)'}
+            </CardTitle>
+            {schedule && schedule.total_distance_km !== undefined && (
+              <div className="text-sm font-medium text-gray-700">
+                Total Distance: {schedule.total_distance_km.toFixed(2)} km
+              </div>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="p-0">
           <MapView

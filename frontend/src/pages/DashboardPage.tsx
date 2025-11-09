@@ -57,7 +57,7 @@ export function DashboardPage() {
           icon={<AlertTriangle className="h-4 w-4" />}
         />
         <Card
-          title="Total Potions"
+          title="Total Potions (Liters)"
           value={totalPotions}
           icon={<FlaskConical className="h-4 w-4" />}
         />
@@ -77,7 +77,7 @@ export function DashboardPage() {
           </ResponsiveContainer>
         </ChartContainer>
 
-        <ChartContainer title="Status Distribution">
+        <ChartContainer title="Cauldron Fill Level">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={statusData}>
               <CartesianGrid strokeDasharray="3 3" />

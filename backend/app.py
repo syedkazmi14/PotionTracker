@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import datetime
 import pandas as pd
 import json
+import requests
 
 app = Flask(__name__)
 
@@ -107,3 +108,25 @@ def update_live_data():
         return jsonify(tcp_server.latest_data)
     except Exception as e:
         return jsonify({'error': str(e)}), 400
+
+@app.route("/api/cauldrons-info")
+@app.route("/api/proxy/cauldrons-info")
+def get_cauldrons_info():
+    """Proxy endpoint to fetch cauldrons info from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Information/cauldrons')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route("/api/cauldron-levels-data")
+@app.route("/api/proxy/cauldron-levels")
+def get_cauldron_levels_data():
+    """Proxy endpoint to fetch cauldron levels data from external API"""
+    try:
+        response = requests.get('https://hackutd2025.eog.systems/api/Data')
+        response.raise_for_status()
+        return jsonify(response.json())
+    except requests.exceptions.RequestException as e:
+        return jsonify({'error': str(e)}), 500

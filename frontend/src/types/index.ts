@@ -47,3 +47,22 @@ export type Ticket = z.infer<typeof TicketSchema>
 export type DiscrepancyDataPoint = z.infer<typeof DiscrepancyDataPointSchema>
 export type DiscrepancyData = Record<string, DiscrepancyDataPoint[]>
 
+// API Response Types
+export type CauldronInfo = {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  max_volume: number
+}
+
+export type CauldronLevelsData = {
+  timestamp: string
+  cauldron_levels: Record<string, number>
+}
+
+export type TrendLineDataPoint = {
+  time: string
+  [cauldronId: string]: string | number | null
+}
+

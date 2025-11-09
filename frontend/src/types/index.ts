@@ -103,7 +103,7 @@ export type Forecast = {
   current_percentage: number
   brew_rate_liters_per_hour: number
   forecast_points: ForecastPoint[]
-  time_to_90_percent: string | null
+  time_to_80_percent: string | null
   time_to_100_percent: string | null
   at_risk_12h: boolean
 }

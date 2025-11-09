@@ -94,12 +94,12 @@ export function WitchViewPage() {
 
   const { cauldrons, market, network } = liveData
 
-  // Get suggested pickups (cauldrons that will exceed 90% soonest)
+  // Get suggested pickups (cauldrons that will exceed 80% soonest)
   const suggestedPickups = useMemo(() => {
     return cauldrons
       .map(cauldron => {
         const forecast = forecasts.find(f => f.cauldron_id === cauldron.id)
-        const timeTo90 = forecast?.time_to_90_percent
+        const timeTo80 = forecast?.time_to_80_percent
         const travelTime = market && network
           ? network.edges.find(e => 
               (e.from === 'market' && e.to === cauldron.id) || 
@@ -110,10 +110,10 @@ export function WitchViewPage() {
         return {
           cauldron,
           forecast,
-          timeTo90: timeTo90 ? DateTime.fromISO(timeTo90) : null,
+          timeTo80: timeTo80 ? DateTime.fromISO(timeTo80) : null,
           travelTime,
-          urgency: timeTo90 
-            ? DateTime.fromISO(timeTo90).diffNow('hours').hours 
+          urgency: timeTo80 
+            ? DateTime.fromISO(timeTo80).diffNow('hours').hours 
             : Infinity,
         }
       })
@@ -366,10 +366,10 @@ export function WitchViewPage() {
                           <p className="text-sm text-yellow-700">
                             Fill: {item.cauldron.fillPercent.toFixed(1)}%
                           </p>
-                          {item.timeTo90 && (
+                          {item.timeTo80 && (
                             <p className="text-xs text-yellow-600 mt-1 flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              Time to 90%: {item.timeTo90.toRelative()}
+                              Time to 80%: {item.timeTo80.toRelative()}
                             </p>
                           )}
                           {item.travelTime > 0 && (
@@ -473,7 +473,7 @@ export function WitchViewPage() {
               <MapView
                 markers={markers}
                 market={market}
-                networkEdges={network?.edges || []}
+                networkEdges={[]}
                 nodeCoordinates={nodeCoordinates}
                 route={route}
                 className="h-[600px]"

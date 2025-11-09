@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from sklearn.linear_model import LinearRegression
-from .data_analysis import get_cauldron_data
+from utils import get_cauldron_data
 
 
 
@@ -56,13 +56,14 @@ def calculate_daily_slopes():
                 # Get R² and the slope (in level/minute) for this section.
                 r_squared = model.score(time_numeric, levels)
                 slope_per_minute = model.coef_[0] * 60
-
+                section_duration_minutes = (section['time'].max() - section['time'].min()).total_seconds() / 60
                 # Store the result, linking it to the specific date of the section.
                 all_section_results.append({
                     'cauldron': cauldron_name,
-                    'date': section['date'].iloc[0], # Get the date for this section
+                    'date': section['date'].iloc[0],
                     'section_slope_per_min': slope_per_minute,
-                    'section_r_squared': r_squared
+                    'section_r_squared': r_squared,
+                    'section_duration_minutes': section_duration_minutes # Add duration
                 })
 
     print("Finished processing individual sections.")
@@ -72,21 +73,49 @@ def calculate_daily_slopes():
     # Create a DataFrame from the results of all individual sections.
     sections_df = pd.DataFrame(all_section_results)
 
-    print("\nAggregating results by day...")
+    print("\nAggregating slope results by day...")
     # Group by cauldron and date, then calculate the average for each group.
     daily_summary = sections_df.groupby(['cauldron', 'date']).agg(
-        # Calculate the mean of the slopes from all sections found on that day.
         average_section_slope=('section_slope_per_min', 'mean'),
-        # Calculate the mean of the R² values from all sections found on that day.
         average_section_r_squared=('section_r_squared', 'mean'),
-        # Count how many sections were found and averaged for that day.
-        section_count=('section_slope_per_min', 'size')
+        section_count=('section_slope_per_min', 'size'),
+        total_generation_minutes=('section_duration_minutes', 'sum') # Sum up the durations
+    ).reset_index()
+
+    # --- Step 6: Get the start and end of day amounts for each cauldron ---
+    print("\nCalculating start and end of day amounts...")
+
+    # To easily process all cauldrons, we "unpivot" the DataFrame from wide to long format.
+    df_long = df.melt(
+        id_vars=['date', 'time'],
+        value_vars=cauldron_columns,
+        var_name='cauldron',
+        value_name='level'
+    )
+
+    # IMPORTANT: Sort by time to ensure 'first' and 'last' aggregations are correct.
+    df_long = df_long.sort_values('time')
+
+    # Group by cauldron and date, then grab the first and last level for that day.
+    daily_levels = df_long.groupby(['cauldron', 'date']).agg(
+        start_of_day_amount=('level', 'first'),
+        end_of_day_amount=('level', 'last')
     ).reset_index()
 
 
-    # --- Step 6: Display the final daily summary ---
+    # --- Step 7: Merge the slope summary with the daily level amounts ---
+    print("Merging all daily data...")
+    final_summary = pd.merge(
+        daily_summary,
+        daily_levels,
+        on=['cauldron', 'date'],
+        how='left' # Use a left merge to keep all slope data.
+    )
+
+
+    # --- Step 8: Display the final daily summary ---
     print("\n--- Daily Averages of Individual Section Slopes and R-Squared ---")
     # Set display options to ensure all rows are shown for a complete view.
     pd.set_option('display.max_rows', None)
-    print(daily_summary)
-    return daily_summary
+    print(final_summary)
+    return final_summary
